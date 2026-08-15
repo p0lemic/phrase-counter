@@ -6,15 +6,26 @@ export interface RhythmResult {
   kickTimesSec: number[]
 }
 
+interface EmbindVector {
+  delete: () => void
+}
+
+interface RhythmExtractorOutput {
+  bpm: number
+  ticks: EmbindVector
+  estimates: EmbindVector
+  bpmIntervals: EmbindVector
+}
+
 interface EssentiaInstance {
-  arrayToVector: (array: Float32Array) => unknown
-  vectorToArray: (vector: unknown) => Float32Array
+  arrayToVector: (array: Float32Array) => EmbindVector
+  vectorToArray: (vector: EmbindVector) => Float32Array
   RhythmExtractor2013: (
-    signal: unknown,
+    signal: EmbindVector,
     maxTempo: number,
     method: 'multifeature' | 'degara',
     minTempo: number
-  ) => { bpm: number; ticks: unknown }
+  ) => RhythmExtractorOutput
 }
 
 type EssentiaConstructor = new (wasmModule: unknown) => EssentiaInstance
@@ -55,6 +66,17 @@ export async function detectRhythm(
   const essentia = await loadEssentia()
   const vectorSignal = essentia.arrayToVector(monoSamples)
   const result = essentia.RhythmExtractor2013(vectorSignal, maxBpm, 'multifeature', minBpm)
+
   const kickTimesSec = Array.from(essentia.vectorToArray(result.ticks))
+
+  // RhythmExtractor2013's input and its vector-valued outputs are all Emscripten/embind objects:
+  // their backing memory lives on the WASM heap and isn't garbage-collected with the JS wrapper,
+  // so it must be freed explicitly or it leaks on every call — enough of them in one session (e.g.
+  // batch-adding a folder, or just a few long tracks) eventually aborts the WASM runtime.
+  vectorSignal.delete()
+  result.ticks.delete()
+  result.estimates.delete()
+  result.bpmIntervals.delete()
+
   return { bpm: result.bpm, kickTimesSec }
 }
