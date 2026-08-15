@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildBeatGrid, phraseBoundariesSec } from './bpmGrid'
+import { buildBeatGrid, buildBeatGridFromBpm, phraseBoundariesSec } from './bpmGrid'
 
 describe('buildBeatGrid', () => {
   test('computes the BPM of a steady sequence of kicks', () => {
@@ -74,6 +74,18 @@ describe('buildBeatGrid', () => {
     }
     // And it picks back up aligned with the real detected kicks afterwards.
     expect(grid.kickTimesSec[afterStartIndex]).toBeCloseTo(after[0], 1)
+  })
+})
+
+describe('buildBeatGridFromBpm', () => {
+  test('builds an evenly-spaced grid from a manual BPM and first-kick offset', () => {
+    const grid = buildBeatGridFromBpm(180, 0.5, 5)
+
+    expect(grid.bpm).toBe(180)
+    expect(grid.kickIntervalSec).toBeCloseTo(60 / 180, 5)
+    expect(grid.kickTimesSec[0]).toBe(0.5)
+    expect(grid.kickTimesSec[1]).toBeCloseTo(0.5 + 60 / 180, 5)
+    expect(grid.kickTimesSec[grid.kickTimesSec.length - 1]).toBeLessThanOrEqual(5)
   })
 })
 

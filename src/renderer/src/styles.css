@@ -89,3 +89,115 @@ body {
 .waveform {
   margin-top: 16px;
 }
+
+.blocks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 24px;
+}
+
+.block {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.block__shift {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px;
+}
+
+.block__shift:hover {
+  color: var(--text);
+}
+
+.block__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 56px;
+}
+
+.block__card--drop {
+  border-color: var(--accent);
+  background: rgba(255, 93, 115, 0.1);
+}
+
+.block__count {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.block__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.block__actions button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.block__actions button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--border);
+}
+
+.block__actions button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.manual-override {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.manual-override input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 13px;
+  width: 150px;
+}
+
+.manual-override button {
+  background: var(--border);
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.manual-override button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
