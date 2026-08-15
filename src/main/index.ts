@@ -11,6 +11,7 @@ import {
   updateSongBlocks,
   type NewSongRecord
 } from './database'
+import type { SongMetadata } from '../shared/song'
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.aiff', '.m4a', '.ogg']
 
@@ -39,6 +40,40 @@ ipcMain.handle('read-audio-file', async (_event, filePath: string): Promise<Arra
   }
   const buffer = await readFile(filePath)
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+})
+
+const EMPTY_METADATA: SongMetadata = {
+  title: null,
+  artist: null,
+  album: null,
+  coverDataUrl: null,
+  key: null,
+  ratingStars: null
+}
+
+ipcMain.handle('read-song-metadata', async (_event, filePath: string): Promise<SongMetadata> => {
+  // music-metadata is ESM-only; this file builds to CJS, so it must be loaded via dynamic import.
+  const { parseFile } = await import('music-metadata')
+  try {
+    const { common } = await parseFile(filePath, { skipCovers: false })
+    const picture = common.picture?.[0]
+    const coverDataUrl = picture
+      ? `data:${picture.format};base64,${Buffer.from(picture.data).toString('base64')}`
+      : null
+    const rating = common.rating?.find((r) => r.rating !== undefined)?.rating
+
+    return {
+      title: common.title ?? null,
+      artist: common.artist ?? null,
+      album: common.album ?? null,
+      coverDataUrl,
+      key: common.key ?? null,
+      ratingStars: rating !== undefined ? Math.round(rating * 5) : null
+    }
+  } catch {
+    // Missing/corrupt tags shouldn't block opening the song — just show nothing extra.
+    return EMPTY_METADATA
+  }
 })
 
 ipcMain.handle('db:list-songs', () => listSongs())

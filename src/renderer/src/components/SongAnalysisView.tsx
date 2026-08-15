@@ -14,6 +14,7 @@ import {
   toggleBreakdown
 } from '../audio-analysis/blockEditing'
 import { computeTapBpm } from '../audio-analysis/tapTempo'
+import type { SongMetadata } from '../../../shared/song'
 
 interface Song {
   filePath: string
@@ -71,6 +72,7 @@ export default function SongAnalysisView({
 
   const [status, setStatus] = useState<Status>({ kind: 'analyzing' })
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [metadata, setMetadata] = useState<SongMetadata | null>(null)
   const [waveformReady, setWaveformReady] = useState(false)
   /** The BPM shown next to the stepper/tap controls — only applied to the grid on "Recalcular rejilla". */
   const [pendingBpm, setPendingBpm] = useState<number | null>(null)
@@ -83,10 +85,20 @@ export default function SongAnalysisView({
     let cancelled = false
     let blobUrl: string | undefined
     setResult(null)
+    setMetadata(null)
     setWaveformReady(false)
     setPendingBpm(null)
     setTapTimestampsMs([])
     setIsPlaying(false)
+
+    // Cover/title/artist/key/rating are a nice-to-have read from the file's own tags — fetched
+    // independently of the analysis pipeline so a slow/missing tag never blocks it.
+    window.api
+      .readSongMetadata(song.filePath)
+      .then((m) => {
+        if (!cancelled) setMetadata(m)
+      })
+      .catch(() => {})
 
     async function analyze(): Promise<void> {
       setStatus({ kind: 'analyzing' })
@@ -333,7 +345,26 @@ export default function SongAnalysisView({
       <button className="back-button" onClick={onClose}>
         ← Volver
       </button>
-      <h2>{song.fileName}</h2>
+
+      <div className="song-summary">
+        {metadata?.coverDataUrl && <img className="song-summary__cover" src={metadata.coverDataUrl} alt="" />}
+        <div className="song-summary__info">
+          <h2 className="song-summary__title">{metadata?.title || song.fileName}</h2>
+          {metadata?.artist && <p className="song-summary__artist">{metadata.artist}</p>}
+        </div>
+        {status.kind === 'ready' && result && (
+          <div className="song-summary__stats">
+            <span className="song-summary__stat-value">{Math.round(result.bpm)}</span>
+            {metadata?.key && <span className="song-summary__stat-value song-summary__stat-value--key">{metadata.key}</span>}
+            {metadata?.ratingStars != null && (
+              <span className="song-summary__stars">
+                {'★'.repeat(metadata.ratingStars)}
+                {'☆'.repeat(5 - metadata.ratingStars)}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       {status.kind === 'analyzing' && <p className="song-view__status">Analizando audio…</p>}
       {status.kind === 'error' && <p className="song-view__status song-view__status--error">{status.message}</p>}

@@ -153,6 +153,62 @@ body {
   padding: 0 0 16px;
 }
 
+.song-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.song-summary__cover {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.song-summary__info {
+  min-width: 0;
+}
+
+.song-summary__title {
+  margin: 0;
+  font-size: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.song-summary__artist {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.song-summary__stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  padding-left: 16px;
+}
+
+.song-summary__stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-summary__stat-value--key {
+  color: var(--accent);
+}
+
+.song-summary__stars {
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+
 .song-view__status {
   color: var(--text-dim);
   font-size: 14px;

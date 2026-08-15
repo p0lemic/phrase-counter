@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { NewSongRecord, SongRecord } from '../shared/song'
+import type { NewSongRecord, SongMetadata, SongRecord } from '../shared/song'
 
 const api = {
   readAudioFile: (filePath: string): Promise<ArrayBuffer> => ipcRenderer.invoke('read-audio-file', filePath),
+  readSongMetadata: (filePath: string): Promise<SongMetadata> => ipcRenderer.invoke('read-song-metadata', filePath),
   db: {
     listSongs: (): Promise<SongRecord[]> => ipcRenderer.invoke('db:list-songs'),
     findSongByPath: (filePath: string): Promise<SongRecord | undefined> =>
