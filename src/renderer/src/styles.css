@@ -32,7 +32,51 @@ body {
   margin: 0 0 24px;
 }
 
-.dropzone {
+.library-dropzone {
+  flex: 1;
+  display: flex;
+  border: 2px dashed transparent;
+  border-radius: 12px;
+  transition: border-color 0.15s ease;
+}
+
+.library-dropzone--active {
+  border-color: var(--accent);
+}
+
+.library {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.library__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.library__toolbar button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.library__toolbar button:hover {
+  border-color: var(--accent);
+}
+
+.library__progress {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.library__empty {
   flex: 1;
   display: flex;
   align-items: center;
@@ -40,12 +84,56 @@ body {
   border: 2px dashed var(--border);
   border-radius: 12px;
   color: var(--text-dim);
-  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
-.dropzone--active {
-  border-color: var(--accent);
-  color: var(--text);
+.library__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.library__table th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.library__table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.library__table tbody tr {
+  cursor: pointer;
+}
+
+.library__table tbody tr:hover {
+  background: var(--surface);
+}
+
+.library__result {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.library__delete {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.library__delete:hover {
+  color: var(--accent);
+  background: var(--border);
 }
 
 .song-view {
@@ -63,12 +151,6 @@ body {
   cursor: pointer;
   font-size: 14px;
   padding: 0 0 16px;
-}
-
-.song-view__path {
-  color: var(--text-dim);
-  font-size: 13px;
-  word-break: break-all;
 }
 
 .song-view__status {

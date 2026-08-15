@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin, { type Region } from 'wavesurfer.js/plugins/regions'
-import { decodeAudioBuffer } from '../audio-analysis/decode'
-import { detectKicks } from '../audio-analysis/kickDetection'
-import { buildBeatGrid, buildBeatGridFromBpm, phraseBoundariesSec } from '../audio-analysis/bpmGrid'
+import { analyzeSong } from '../audio-analysis/analyzeSong'
+import { buildBeatGridFromBpm, phraseBoundariesSec } from '../audio-analysis/bpmGrid'
 import { computePhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis/energySegmentation'
 import { markDrops } from '../audio-analysis/dropDetection'
 import { formatBlocks, type Block } from '../audio-analysis/formatBlocks'
@@ -12,6 +11,9 @@ import { blockBoundaryTimesSec, mergeWithNext, shiftBoundary, splitInHalf, toggl
 interface Song {
   filePath: string
   fileName: string
+  /** Existing library entry to reopen, if any. Its saved blocks win over freshly auto-detected ones. */
+  songId?: number
+  initialBlocks?: Block[]
 }
 
 interface AnalysisResult {
@@ -51,6 +53,7 @@ export default function SongAnalysisView({
   const allRegionsRef = useRef<Region[]>([])
   const monoSamplesRef = useRef<Float32Array | null>(null)
   const sampleRateRef = useRef<number | null>(null)
+  const songIdRef = useRef<number | null>(null)
 
   const [status, setStatus] = useState<Status>({ kind: 'analyzing' })
   const [result, setResult] = useState<AnalysisResult | null>(null)
@@ -72,16 +75,26 @@ export default function SongAnalysisView({
       setStatus({ kind: 'analyzing' })
 
       const arrayBuffer = await window.api.readAudioFile(song.filePath)
-      const { monoSamples, sampleRate, durationSec } = await decodeAudioBuffer(arrayBuffer)
-      monoSamplesRef.current = monoSamples
-      sampleRateRef.current = sampleRate
-      const kickTimesSec = detectKicks(monoSamples, sampleRate)
-      const grid = buildBeatGrid(kickTimesSec, durationSec)
-      const phraseTimesSec = phraseBoundariesSec(grid.kickTimesSec)
-      const phraseEnergies = computePhraseEnergies(monoSamples, sampleRate, phraseTimesSec, durationSec)
-      const blocks = markDrops(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
+      const analysis = await analyzeSong(arrayBuffer)
+      monoSamplesRef.current = analysis.monoSamples
+      sampleRateRef.current = analysis.sampleRate
+      const blocks = song.initialBlocks ?? analysis.blocks
 
       if (cancelled || !waveformContainerRef.current) return
+
+      if (song.songId !== undefined) {
+        songIdRef.current = song.songId
+      } else {
+        const inserted = await window.api.db.insertSong({
+          filePath: song.filePath,
+          title: song.fileName,
+          bpm: analysis.bpm,
+          durationMs: Math.round(analysis.durationSec * 1000),
+          blocks
+        })
+        if (cancelled) return
+        songIdRef.current = inserted.id
+      }
 
       // wavesurfer needs a playable URL; a file:// URL is blocked here since the
       // renderer's origin isn't file://, so we reuse the bytes we already read.
@@ -94,8 +107,8 @@ export default function SongAnalysisView({
         progressColor: '#4c4f5c',
         cursorColor: '#ff5d73',
         url: blobUrl,
-        peaks: [monoSamples],
-        duration: durationSec
+        peaks: [analysis.monoSamples],
+        duration: analysis.durationSec
       })
       wavesurferRef.current = wavesurfer
       regionsRef.current = wavesurfer.registerPlugin(RegionsPlugin.create())
@@ -104,7 +117,13 @@ export default function SongAnalysisView({
         if (!cancelled) setWaveformReady(true)
       })
 
-      setResult({ bpm: grid.bpm, durationSec, phraseTimesSec, phraseEnergies, blocks })
+      setResult({
+        bpm: analysis.bpm,
+        durationSec: analysis.durationSec,
+        phraseTimesSec: analysis.phraseTimesSec,
+        phraseEnergies: analysis.phraseEnergies,
+        blocks
+      })
       setStatus({ kind: 'ready' })
     }
 
@@ -122,8 +141,11 @@ export default function SongAnalysisView({
       allRegionsRef.current = []
       monoSamplesRef.current = null
       sampleRateRef.current = null
+      songIdRef.current = null
       if (blobUrl) URL.revokeObjectURL(blobUrl)
     }
+    // Only re-run when the song identity itself changes — songId/initialBlocks
+    // are read once at analysis time and shouldn't retrigger on every render.
   }, [song.filePath])
 
   // Redraws the phrase grid, block boundaries and drop highlight whenever the analysis changes.
@@ -176,8 +198,16 @@ export default function SongAnalysisView({
     })
   }, [result, waveformReady])
 
+  function persistBlocks(blocks: Block[]): void {
+    if (songIdRef.current === null) return
+    window.api.db.updateSongBlocks(songIdRef.current, blocks).catch(() => {})
+  }
+
   function updateBlocks(updater: (blocks: Block[]) => Block[]): void {
-    setResult((prev) => (prev ? { ...prev, blocks: updater(prev.blocks) } : prev))
+    if (!result) return
+    const blocks = updater(result.blocks)
+    persistBlocks(blocks)
+    setResult({ ...result, blocks })
   }
 
   function recomputeFromManualBpm(bpm: number, offsetSec: number): void {
@@ -191,6 +221,7 @@ export default function SongAnalysisView({
       result.durationSec
     )
     const blocks = markDrops(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
+    persistBlocks(blocks)
     setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, phraseEnergies, blocks })
   }
 

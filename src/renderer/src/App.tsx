@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import SongAnalysisView from './components/SongAnalysisView'
+import Library from './components/Library'
+import type { Block } from './audio-analysis/formatBlocks'
 
-interface DroppedSong {
+interface OpenSong {
   filePath: string
   fileName: string
+  songId?: number
+  initialBlocks?: Block[]
 }
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.aiff', '.m4a', '.ogg']
@@ -13,7 +17,13 @@ function isAudioFile(fileName: string): boolean {
   return AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
-function DropZone({ onSongDropped }: { onSongDropped: (song: DroppedSong) => void }): React.JSX.Element {
+function LibraryWithDropzone({
+  onOpenSong,
+  refreshKey
+}: {
+  onOpenSong: (song: OpenSong) => void
+  refreshKey: number
+}): React.JSX.Element {
   const [isDragging, setIsDragging] = useState(false)
 
   const handleDrop = useCallback(
@@ -27,14 +37,14 @@ function DropZone({ onSongDropped }: { onSongDropped: (song: DroppedSong) => voi
       const filePath = (file as unknown as { path: string }).path
       if (!filePath) return
 
-      onSongDropped({ filePath, fileName: file.name })
+      onOpenSong({ filePath, fileName: file.name })
     },
-    [onSongDropped]
+    [onOpenSong]
   )
 
   return (
     <div
-      className={`dropzone${isDragging ? ' dropzone--active' : ''}`}
+      className={`library-dropzone${isDragging ? ' library-dropzone--active' : ''}`}
       onDragOver={(event) => {
         event.preventDefault()
         setIsDragging(true)
@@ -42,13 +52,13 @@ function DropZone({ onSongDropped }: { onSongDropped: (song: DroppedSong) => voi
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
     >
-      <p>Arrastra un archivo de audio aquí (mp3, wav, flac…)</p>
+      <Library key={refreshKey} onOpenSong={onOpenSong} />
     </div>
   )
 }
 
 /** Dev-only convenience: `?debugFile=<path>` auto-opens a song, to test without a real drag-and-drop. */
-function useDebugFileFromQuery(onSongReady: (song: DroppedSong) => void): void {
+function useDebugFileFromQuery(onSongReady: (song: OpenSong) => void): void {
   useEffect(() => {
     const debugFile = new URLSearchParams(window.location.search).get('debugFile')
     if (!debugFile) return
@@ -58,8 +68,14 @@ function useDebugFileFromQuery(onSongReady: (song: DroppedSong) => void): void {
 }
 
 export default function App(): React.JSX.Element {
-  const [currentSong, setCurrentSong] = useState<DroppedSong | null>(null)
+  const [currentSong, setCurrentSong] = useState<OpenSong | null>(null)
+  const [libraryRefreshKey, setLibraryRefreshKey] = useState(0)
   useDebugFileFromQuery(setCurrentSong)
+
+  function closeSong(): void {
+    setCurrentSong(null)
+    setLibraryRefreshKey((key) => key + 1)
+  }
 
   return (
     <main className="app">
@@ -67,9 +83,9 @@ export default function App(): React.JSX.Element {
         <h1>Drop Count</h1>
       </header>
       {currentSong ? (
-        <SongAnalysisView song={currentSong} onClose={() => setCurrentSong(null)} />
+        <SongAnalysisView song={currentSong} onClose={closeSong} />
       ) : (
-        <DropZone onSongDropped={setCurrentSong} />
+        <LibraryWithDropzone onOpenSong={setCurrentSong} refreshKey={libraryRefreshKey} />
       )}
     </main>
   )

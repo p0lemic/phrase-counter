@@ -1,17 +1,66 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
-import { readFile } from 'node:fs/promises'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
+import {
+  deleteSong,
+  findSongByFilePath,
+  insertSong,
+  listSongs,
+  openDatabase,
+  updateSongBlocks,
+  type NewSongRecord
+} from './database'
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.aiff', '.m4a', '.ogg']
 
-ipcMain.handle('read-audio-file', async (_event, filePath: string): Promise<ArrayBuffer> => {
+function isAudioFile(filePath: string): boolean {
   const lower = filePath.toLowerCase()
-  if (!AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+  return AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
+async function scanFolderForAudioFiles(folderPath: string): Promise<string[]> {
+  const entries = await readdir(folderPath, { withFileTypes: true })
+  const results: string[] = []
+  for (const entry of entries) {
+    const entryPath = join(folderPath, entry.name)
+    if (entry.isDirectory()) {
+      results.push(...(await scanFolderForAudioFiles(entryPath)))
+    } else if (entry.isFile() && isAudioFile(entryPath)) {
+      results.push(entryPath)
+    }
+  }
+  return results
+}
+
+ipcMain.handle('read-audio-file', async (_event, filePath: string): Promise<ArrayBuffer> => {
+  if (!isAudioFile(filePath)) {
     throw new Error(`Not an audio file: ${filePath}`)
   }
   const buffer = await readFile(filePath)
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+})
+
+ipcMain.handle('db:list-songs', () => listSongs())
+ipcMain.handle('db:find-song-by-path', (_event, filePath: string) => findSongByFilePath(filePath))
+ipcMain.handle('db:insert-song', (_event, song: NewSongRecord) => insertSong(song))
+ipcMain.handle('db:update-song-blocks', (_event, id: number, blocks: NewSongRecord['blocks']) =>
+  updateSongBlocks(id, blocks)
+)
+ipcMain.handle('db:delete-song', (_event, id: number) => deleteSong(id))
+
+ipcMain.handle('dialog:open-audio-files', async (): Promise<string[]> => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Audio', extensions: AUDIO_EXTENSIONS.map((ext) => ext.slice(1)) }]
+  })
+  return result.canceled ? [] : result.filePaths
+})
+
+ipcMain.handle('dialog:open-audio-folder', async (): Promise<string[]> => {
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+  if (result.canceled || result.filePaths.length === 0) return []
+  return scanFolderForAudioFiles(result.filePaths[0])
 })
 
 function createWindow(): void {
@@ -50,7 +99,8 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await openDatabase(join(app.getPath('userData'), 'drop-count.sqlite'))
   createWindow()
 
   app.on('activate', function () {

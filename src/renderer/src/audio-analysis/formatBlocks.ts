@@ -1,7 +1,6 @@
-export interface Block {
-  phraseCount: number
-  isDrop: boolean
-}
+import type { Block } from '../../../shared/song'
+
+export type { Block }
 
 export function formatBlocks(blocks: Block[]): string {
   return blocks
