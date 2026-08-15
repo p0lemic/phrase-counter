@@ -33,6 +33,14 @@ La librería se guarda en `~/Library/Application Support/drop-count/drop-count.s
 DROP_COUNT_DEBUG_FILE="/ruta/a/tu/cancion.mp3" npm run dev
 ```
 
+### Usar una librería de pruebas aislada (atajo de desarrollo)
+
+Para probar sin arriesgar la librería real (`~/Library/Application Support/drop-count`):
+
+```bash
+DROP_COUNT_TEST_USERDATA_DIR="/tmp/dropcount-test-userdata" npm run dev
+```
+
 ## Tests y typecheck
 
 ```bash

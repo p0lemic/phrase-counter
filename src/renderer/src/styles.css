@@ -305,16 +305,6 @@ body {
   padding: 6px 10px;
 }
 
-.manual-override input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 6px 8px;
-  font-size: 13px;
-  width: 150px;
-}
-
 .manual-override button {
   background: var(--border);
   border: none;

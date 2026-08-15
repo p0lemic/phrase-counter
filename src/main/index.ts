@@ -107,6 +107,12 @@ function createWindow(): void {
   }
 }
 
+// Dev-only escape hatch to point the whole app (DB + Electron profile) at a throwaway folder
+// during manual testing, so it never touches the user's real library at the default userData path.
+if (is.dev && process.env['DROP_COUNT_TEST_USERDATA_DIR']) {
+  app.setPath('userData', process.env['DROP_COUNT_TEST_USERDATA_DIR'])
+}
+
 app.whenReady().then(async () => {
   await openDatabase(join(app.getPath('userData'), 'drop-count.sqlite'))
   createWindow()

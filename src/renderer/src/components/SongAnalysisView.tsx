@@ -66,12 +66,14 @@ export default function SongAnalysisView({
   const monoSamplesRef = useRef<Float32Array | null>(null)
   const sampleRateRef = useRef<number | null>(null)
   const songIdRef = useRef<number | null>(null)
+  /** The fully automatic result, cached so "Reset" can restore it without re-running detection. */
+  const originalResultRef = useRef<AnalysisResult | null>(null)
 
   const [status, setStatus] = useState<Status>({ kind: 'analyzing' })
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [waveformReady, setWaveformReady] = useState(false)
-  const [manualBpmInput, setManualBpmInput] = useState('')
-  const [manualOffsetInput, setManualOffsetInput] = useState('')
+  /** The BPM shown next to the stepper/tap controls — only applied to the grid on "Recalcular rejilla". */
+  const [pendingBpm, setPendingBpm] = useState<number | null>(null)
   const [copyFeedback, setCopyFeedback] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [tapTimestampsMs, setTapTimestampsMs] = useState<number[]>([])
@@ -82,8 +84,7 @@ export default function SongAnalysisView({
     let blobUrl: string | undefined
     setResult(null)
     setWaveformReady(false)
-    setManualBpmInput('')
-    setManualOffsetInput('')
+    setPendingBpm(null)
     setTapTimestampsMs([])
     setIsPlaying(false)
 
@@ -144,6 +145,16 @@ export default function SongAnalysisView({
       wavesurfer.on('pause', () => setIsPlaying(false))
       wavesurfer.on('finish', () => setIsPlaying(false))
 
+      // Cached as-is (analysis.blocks, not the possibly-saved/edited `blocks`) so "Reset" always
+      // means "what automatic detection computes right now", regardless of what was loaded.
+      originalResultRef.current = {
+        bpm: analysis.bpm,
+        durationSec: analysis.durationSec,
+        phraseTimesSec: analysis.phraseTimesSec,
+        phraseEnergies: analysis.phraseEnergies,
+        blocks: analysis.blocks
+      }
+
       setResult({
         bpm: analysis.bpm,
         durationSec: analysis.durationSec,
@@ -151,6 +162,7 @@ export default function SongAnalysisView({
         phraseEnergies: analysis.phraseEnergies,
         blocks
       })
+      setPendingBpm(analysis.bpm)
       setStatus({ kind: 'ready' })
     }
 
@@ -169,6 +181,7 @@ export default function SongAnalysisView({
       monoSamplesRef.current = null
       sampleRateRef.current = null
       songIdRef.current = null
+      originalResultRef.current = null
       if (blobUrl) URL.revokeObjectURL(blobUrl)
     }
     // Only re-run when the song identity itself changes — songId/initialBlocks
@@ -237,7 +250,8 @@ export default function SongAnalysisView({
     setResult({ ...result, blocks })
   }
 
-  function recomputeFromManualBpm(bpm: number, offsetSec: number): void {
+  /** Rebuilds the phrase grid + segmentation from a BPM value, without re-running kick detection. */
+  function recomputeFromBpm(bpm: number, offsetSec: number): void {
     if (!result || !monoSamplesRef.current || sampleRateRef.current === null) return
     const grid = buildBeatGridFromBpm(bpm, offsetSec, result.durationSec)
     const phraseTimesSec = phraseBoundariesSec(grid.kickTimesSec)
@@ -252,10 +266,25 @@ export default function SongAnalysisView({
     setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, phraseEnergies, blocks })
   }
 
-  /** Nudges the BPM by a small amount, keeping the same first-kick anchor. */
+  /** Applies the currently-shown pending BPM (auto/stepped/tapped) to the grid. */
+  function recalculateGrid(): void {
+    if (pendingBpm === null || !result) return
+    recomputeFromBpm(pendingBpm, result.phraseTimesSec[0] ?? 0)
+  }
+
+  /** Discards any BPM/grid/block edits and restores the fully automatic result. */
+  function resetToAutomatic(): void {
+    const original = originalResultRef.current
+    if (!original) return
+    const blocks = original.blocks.map((block) => ({ ...block }))
+    persistBlocks(blocks)
+    setResult({ ...original, blocks })
+    setPendingBpm(original.bpm)
+  }
+
+  /** Nudges the shown (not-yet-applied) BPM by a small amount. */
   function stepBpm(deltaBpm: number): void {
-    if (!result) return
-    recomputeFromManualBpm(result.bpm + deltaBpm, result.phraseTimesSec[0] ?? 0)
+    setPendingBpm((current) => (current ?? result?.bpm ?? 0) + deltaBpm)
   }
 
   function togglePlayback(): void {
@@ -276,10 +305,11 @@ export default function SongAnalysisView({
     setTapTimestampsMs([])
   }
 
+  /** Stages the tapped BPM as the pending value — still needs "Recalcular rejilla" to apply it. */
   function applyTapBpm(): void {
     const bpm = computeTapBpm(tapTimestampsMs)
-    if (!result || bpm === null) return
-    recomputeFromManualBpm(bpm, result.phraseTimesSec[0] ?? 0)
+    if (bpm === null) return
+    setPendingBpm(bpm)
     resetTaps()
   }
 
@@ -382,7 +412,7 @@ export default function SongAnalysisView({
               <button onClick={() => stepBpm(-1)} title="Restar 1 BPM">
                 −
               </button>
-              <span className="bpm-stepper__value">{Math.round(result.bpm)}</span>
+              <span className="bpm-stepper__value">{Math.round(pendingBpm ?? result.bpm)}</span>
               <button onClick={() => stepBpm(1)} title="Sumar 1 BPM">
                 +
               </button>
@@ -406,25 +436,11 @@ export default function SongAnalysisView({
           </div>
 
           <div className="manual-override__row">
-            <span>O recalcula con BPM y offset manuales:</span>
-            <input
-              type="number"
-              placeholder={`BPM (auto: ${Math.round(result.bpm)})`}
-              value={manualBpmInput}
-              onChange={(e) => setManualBpmInput(e.target.value)}
-            />
-            <input
-              type="number"
-              step="0.01"
-              placeholder="offset del primer bombo (s)"
-              value={manualOffsetInput}
-              onChange={(e) => setManualOffsetInput(e.target.value)}
-            />
-            <button
-              disabled={!manualBpmInput || !manualOffsetInput}
-              onClick={() => recomputeFromManualBpm(Number(manualBpmInput), Number(manualOffsetInput))}
-            >
+            <button onClick={recalculateGrid} disabled={pendingBpm === null || pendingBpm === result.bpm}>
               Recalcular rejilla
+            </button>
+            <button onClick={resetToAutomatic} title="Descartar ajustes y volver a la detección automática">
+              Reset
             </button>
           </div>
         </div>
