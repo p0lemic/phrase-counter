@@ -18,14 +18,19 @@ function averageEnergyPerBlock(blocks: EnergyBlock[], energies: number[]): numbe
   return blockEnergies
 }
 
-/** Marks blocks whose energy towers over both the previous block and the track average as drops. */
-export function markDrops(blocks: EnergyBlock[], energies: number[], previousBlockRatio = 1.3): Block[] {
+/**
+ * Marks blocks with no kick — a breakdown/atmosphere section — as the ones whose energy does
+ * *not* tower over both the previous block and the track average. The energy comparison itself
+ * reliably tells kick-driven blocks from breakdowns (confirmed against real tracks); breakdown is
+ * just everything that isn't one of those kick blocks.
+ */
+export function markBreakdowns(blocks: EnergyBlock[], energies: number[], previousBlockRatio = 1.3): Block[] {
   const blockEnergies = averageEnergyPerBlock(blocks, energies)
   const trackAverage = average(blockEnergies)
 
   return blocks.map((block, i) => {
     const previousEnergy = i > 0 ? blockEnergies[i - 1] : 0
-    const isDrop = blockEnergies[i] > trackAverage && blockEnergies[i] >= previousEnergy * previousBlockRatio
-    return { phraseCount: block.phraseCount, isDrop }
+    const hasKick = blockEnergies[i] > trackAverage && blockEnergies[i] >= previousEnergy * previousBlockRatio
+    return { phraseCount: block.phraseCount, isBreakdown: !hasKick }
   })
 }

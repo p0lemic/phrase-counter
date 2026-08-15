@@ -1,6 +1,7 @@
 export interface Block {
   phraseCount: number
-  isDrop: boolean
+  /** No kick present in this block — a breakdown/atmosphere section. */
+  isBreakdown: boolean
 }
 
 export interface SongRecord {

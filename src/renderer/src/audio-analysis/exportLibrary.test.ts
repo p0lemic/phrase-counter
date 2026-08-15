@@ -9,8 +9,8 @@ const song: SongRecord = {
   bpm: 170.4,
   durationMs: 37433,
   blocks: [
-    { phraseCount: 4, isDrop: false },
-    { phraseCount: 6, isDrop: true }
+    { phraseCount: 4, isBreakdown: false },
+    { phraseCount: 6, isBreakdown: true }
   ],
   createdAt: '2026-08-15T10:00:00.000Z',
   updatedAt: '2026-08-15T10:05:00.000Z'

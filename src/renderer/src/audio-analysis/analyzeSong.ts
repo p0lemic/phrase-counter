@@ -2,7 +2,7 @@ import { decodeAudioBuffer } from './decode'
 import { detectRhythm } from './essentiaRhythm'
 import { phraseBoundariesSec } from './bpmGrid'
 import { computePhraseEnergies, groupPhrasesIntoBlocks } from './energySegmentation'
-import { markDrops } from './dropDetection'
+import { markBreakdowns } from './breakdownDetection'
 import type { Block } from './formatBlocks'
 
 export interface SongAnalysis {
@@ -20,7 +20,7 @@ export async function analyzeSong(arrayBuffer: ArrayBuffer): Promise<SongAnalysi
   const { bpm, kickTimesSec } = await detectRhythm(monoSamples)
   const phraseTimesSec = phraseBoundariesSec(kickTimesSec)
   const phraseEnergies = computePhraseEnergies(monoSamples, sampleRate, phraseTimesSec, durationSec)
-  const blocks = markDrops(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
+  const blocks = markBreakdowns(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
 
   return { bpm, durationSec, monoSamples, sampleRate, phraseTimesSec, phraseEnergies, blocks }
 }

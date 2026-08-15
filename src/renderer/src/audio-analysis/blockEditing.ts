@@ -16,7 +16,7 @@ export function mergeWithNext(blocks: Block[], index: number): Block[] {
   if (index >= blocks.length - 1) return blocks
   const merged: Block = {
     phraseCount: blocks[index].phraseCount + blocks[index + 1].phraseCount,
-    isDrop: blocks[index].isDrop || blocks[index + 1].isDrop
+    isBreakdown: blocks[index].isBreakdown || blocks[index + 1].isBreakdown
   }
   return [...blocks.slice(0, index), merged, ...blocks.slice(index + 2)]
 }
@@ -25,13 +25,13 @@ export function splitInHalf(blocks: Block[], index: number): Block[] {
   const block = blocks[index]
   const firstHalf = Math.floor(block.phraseCount / 2)
   if (firstHalf < 1 || block.phraseCount - firstHalf < 1) return blocks
-  const first: Block = { phraseCount: firstHalf, isDrop: block.isDrop }
-  const second: Block = { phraseCount: block.phraseCount - firstHalf, isDrop: block.isDrop }
+  const first: Block = { phraseCount: firstHalf, isBreakdown: block.isBreakdown }
+  const second: Block = { phraseCount: block.phraseCount - firstHalf, isBreakdown: block.isBreakdown }
   return [...blocks.slice(0, index), first, second, ...blocks.slice(index + 1)]
 }
 
-export function toggleDrop(blocks: Block[], index: number): Block[] {
-  return blocks.map((block, i) => (i === index ? { ...block, isDrop: !block.isDrop } : block))
+export function toggleBreakdown(blocks: Block[], index: number): Block[] {
+  return blocks.map((block, i) => (i === index ? { ...block, isBreakdown: !block.isBreakdown } : block))
 }
 
 /**

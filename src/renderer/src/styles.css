@@ -225,7 +225,7 @@ body {
   min-width: 56px;
 }
 
-.block__card--drop {
+.block__card--breakdown {
   border-color: var(--accent);
   background: rgba(255, 93, 115, 0.1);
 }

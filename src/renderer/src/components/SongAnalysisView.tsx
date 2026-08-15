@@ -4,9 +4,15 @@ import RegionsPlugin, { type Region } from 'wavesurfer.js/plugins/regions'
 import { analyzeSong } from '../audio-analysis/analyzeSong'
 import { buildBeatGridFromBpm, phraseBoundariesSec } from '../audio-analysis/bpmGrid'
 import { computePhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis/energySegmentation'
-import { markDrops } from '../audio-analysis/dropDetection'
+import { markBreakdowns } from '../audio-analysis/breakdownDetection'
 import { formatBlocks, type Block } from '../audio-analysis/formatBlocks'
-import { blockBoundaryTimesSec, mergeWithNext, shiftBoundary, splitInHalf, toggleDrop } from '../audio-analysis/blockEditing'
+import {
+  blockBoundaryTimesSec,
+  mergeWithNext,
+  shiftBoundary,
+  splitInHalf,
+  toggleBreakdown
+} from '../audio-analysis/blockEditing'
 import { computeTapBpm } from '../audio-analysis/tapTempo'
 
 interface Song {
@@ -169,7 +175,7 @@ export default function SongAnalysisView({
     // are read once at analysis time and shouldn't retrigger on every render.
   }, [song.filePath])
 
-  // Redraws the phrase grid, block boundaries and drop highlight whenever the analysis changes.
+  // Redraws the phrase grid, block boundaries and breakdown highlight whenever the analysis changes.
   useEffect(() => {
     const regions = regionsRef.current
     if (!regions || !result || !waveformReady) return
@@ -201,11 +207,11 @@ export default function SongAnalysisView({
           end: start,
           drag: false,
           resize: false,
-          color: block.isDrop ? '#ff5d73' : 'rgba(255, 255, 255, 0.9)'
+          color: block.isBreakdown ? '#ff5d73' : 'rgba(255, 255, 255, 0.9)'
         })
       )
 
-      if (block.isDrop) {
+      if (block.isBreakdown) {
         allRegionsRef.current.push(
           regions.addRegion({
             start,
@@ -241,7 +247,7 @@ export default function SongAnalysisView({
       phraseTimesSec,
       result.durationSec
     )
-    const blocks = markDrops(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
+    const blocks = markBreakdowns(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
     persistBlocks(blocks)
     setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, phraseEnergies, blocks })
   }
@@ -327,14 +333,17 @@ export default function SongAnalysisView({
                 </button>
               )}
 
-              <div className={`block__card${block.isDrop ? ' block__card--drop' : ''}`}>
+              <div className={`block__card${block.isBreakdown ? ' block__card--breakdown' : ''}`}>
                 <span className="block__count">{block.phraseCount}</span>
                 <div className="block__actions">
                   <button onClick={() => playBlock(i)} title="Reproducir este bloque">
                     ▶
                   </button>
-                  <button onClick={() => updateBlocks((blocks) => toggleDrop(blocks, i))} title="Marcar/desmarcar drop">
-                    {block.isDrop ? '★' : '☆'}
+                  <button
+                    onClick={() => updateBlocks((blocks) => toggleBreakdown(blocks, i))}
+                    title="Marcar/desmarcar breakdown"
+                  >
+                    {block.isBreakdown ? '★' : '☆'}
                   </button>
                   <button
                     onClick={() => updateBlocks((blocks) => splitInHalf(blocks, i))}
