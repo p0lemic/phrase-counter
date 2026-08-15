@@ -57,6 +57,7 @@ export default function SongAnalysisView({
   const [waveformReady, setWaveformReady] = useState(false)
   const [manualBpmInput, setManualBpmInput] = useState('')
   const [manualOffsetInput, setManualOffsetInput] = useState('')
+  const [copyFeedback, setCopyFeedback] = useState(false)
 
   // Runs the analysis pipeline once per song and sets up the waveform.
   useEffect(() => {
@@ -199,6 +200,13 @@ export default function SongAnalysisView({
     wavesurferRef.current.play(boundaryTimesSec[index], boundaryTimesSec[index + 1])
   }
 
+  function copyResult(): void {
+    if (!result) return
+    navigator.clipboard.writeText(formatBlocks(result.blocks)).catch(() => {})
+    setCopyFeedback(true)
+    setTimeout(() => setCopyFeedback(false), 1500)
+  }
+
   return (
     <div className="song-view">
       <button className="back-button" onClick={onClose}>
@@ -211,7 +219,10 @@ export default function SongAnalysisView({
       {status.kind === 'ready' && result && (
         <p className="song-view__status">
           {Math.round(result.bpm)} BPM ·{' '}
-          <span className="song-view__result">{formatBlocks(result.blocks)}</span>
+          <span className="song-view__result">{formatBlocks(result.blocks)}</span>{' '}
+          <button className="copy-button" onClick={copyResult}>
+            {copyFeedback ? 'Copiado ✓' : 'Copiar'}
+          </button>
         </p>
       )}
 
