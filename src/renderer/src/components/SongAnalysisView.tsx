@@ -4,13 +4,31 @@ import RegionsPlugin from 'wavesurfer.js/plugins/regions'
 import { decodeAudioBuffer } from '../audio-analysis/decode'
 import { detectKicks } from '../audio-analysis/kickDetection'
 import { buildBeatGrid, phraseBoundariesSec } from '../audio-analysis/bpmGrid'
+import { computePhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis/energySegmentation'
+import { markDrops } from '../audio-analysis/dropDetection'
+import { formatBlocks, type Block } from '../audio-analysis/formatBlocks'
 
 interface Song {
   filePath: string
   fileName: string
 }
 
-type Status = { kind: 'analyzing' } | { kind: 'ready'; bpm: number } | { kind: 'error'; message: string }
+type Status =
+  | { kind: 'analyzing' }
+  | { kind: 'ready'; bpm: number; blocks: Block[] }
+  | { kind: 'error'; message: string }
+
+/** Timestamps where each block starts, plus a final entry at the track's end. */
+function blockBoundaryTimesSec(blocks: Block[], phraseTimesSec: number[], durationSec: number): number[] {
+  const boundaries: number[] = []
+  let phraseIndex = 0
+  for (const block of blocks) {
+    boundaries.push(phraseTimesSec[phraseIndex] ?? durationSec)
+    phraseIndex += block.phraseCount
+  }
+  boundaries.push(durationSec)
+  return boundaries
+}
 
 const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
   '.mp3': 'audio/mpeg',
@@ -49,6 +67,8 @@ export default function SongAnalysisView({
       const kickTimesSec = detectKicks(monoSamples, sampleRate)
       const grid = buildBeatGrid(kickTimesSec, durationSec)
       const phraseTimesSec = phraseBoundariesSec(grid.kickTimesSec)
+      const phraseEnergies = computePhraseEnergies(monoSamples, sampleRate, phraseTimesSec, durationSec)
+      const blocks = markDrops(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
 
       if (cancelled || !waveformContainerRef.current) return
 
@@ -68,6 +88,8 @@ export default function SongAnalysisView({
       })
 
       const regions = wavesurfer.registerPlugin(RegionsPlugin.create())
+      const boundaryTimesSec = blockBoundaryTimesSec(blocks, phraseTimesSec, durationSec)
+
       wavesurfer.on('decode', () => {
         for (const timeSec of phraseTimesSec) {
           regions.addRegion({
@@ -75,12 +97,35 @@ export default function SongAnalysisView({
             end: timeSec,
             drag: false,
             resize: false,
-            color: 'rgba(255, 255, 255, 0.35)'
+            color: 'rgba(255, 255, 255, 0.2)'
           })
         }
+
+        blocks.forEach((block, i) => {
+          const start = boundaryTimesSec[i]
+          const end = boundaryTimesSec[i + 1]
+
+          regions.addRegion({
+            start,
+            end: start,
+            drag: false,
+            resize: false,
+            color: block.isDrop ? '#ff5d73' : 'rgba(255, 255, 255, 0.9)'
+          })
+
+          if (block.isDrop) {
+            regions.addRegion({
+              start,
+              end,
+              drag: false,
+              resize: false,
+              color: 'rgba(255, 93, 115, 0.15)'
+            })
+          }
+        })
       })
 
-      setStatus({ kind: 'ready', bpm: Math.round(grid.bpm) })
+      setStatus({ kind: 'ready', bpm: Math.round(grid.bpm), blocks })
     }
 
     analyze().catch((error: unknown) => {
@@ -105,7 +150,11 @@ export default function SongAnalysisView({
 
       {status.kind === 'analyzing' && <p className="song-view__status">Analizando audio…</p>}
       {status.kind === 'error' && <p className="song-view__status song-view__status--error">{status.message}</p>}
-      {status.kind === 'ready' && <p className="song-view__status">{status.bpm} BPM</p>}
+      {status.kind === 'ready' && (
+        <p className="song-view__status">
+          {status.bpm} BPM · <span className="song-view__result">{formatBlocks(status.blocks)}</span>
+        </p>
+      )}
 
       <div ref={waveformContainerRef} className="waveform" />
     </div>

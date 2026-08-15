@@ -81,6 +81,11 @@ body {
   color: var(--accent);
 }
 
+.song-view__result {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .waveform {
   margin-top: 16px;
 }
