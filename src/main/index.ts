@@ -89,11 +89,9 @@ function createWindow(): void {
     mainWindow.show()
   })
 
-  if (is.dev) {
-    mainWindow.webContents.on('console-message', (_event, _level, message) => {
-      console.log('[renderer]', message)
-    })
-  }
+  mainWindow.webContents.on('console-message', (_event, _level, message) => {
+    console.log('[renderer]', message)
+  })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)

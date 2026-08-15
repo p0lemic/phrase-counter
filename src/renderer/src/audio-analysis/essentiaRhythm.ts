@@ -44,7 +44,7 @@ const Essentia = unwrapCjsExport<EssentiaConstructor>(EssentiaCoreModule, 'Essen
 
 let essentiaPromise: Promise<EssentiaInstance> | null = null
 
-async function loadEssentia(): Promise<EssentiaInstance> {
+function loadEssentia(): Promise<EssentiaInstance> {
   if (!essentiaPromise) {
     essentiaPromise = Promise.resolve(EssentiaWASM).then((wasmModule) => new Essentia(wasmModule))
   }
@@ -57,6 +57,14 @@ async function loadEssentia(): Promise<EssentiaInstance> {
  * which tracks the musically "felt" beat through the whole track rather than just the most
  * frequent low-frequency pulse — this is what correctly resolves "gallop"/triplet kick patterns
  * that fooled a simpler peak-picking + interval approach.
+ *
+ * Uses the "umd" WASM build (WASM inlined as base64) rather than the "web" build (fetches its
+ * .wasm over the network): the web build hung indefinitely in Electron's renderer on a real
+ * ~6-minute track, whereas the umd build completes reliably. The umd build does misdetect its
+ * runtime as Node (`process.versions.node` is present in Electron's renderer even without
+ * nodeIntegration) and take a code path with stubbed-out fs/path/crypto — harmless in practice
+ * since RhythmExtractor2013 never actually needs them, confirmed by a 10x-in-a-row stress test
+ * against the same long track with no failures once the vector memory leak below was fixed.
  */
 export async function detectRhythm(
   monoSamples: Float32Array,

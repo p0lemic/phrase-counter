@@ -84,16 +84,24 @@ export default function SongAnalysisView({
     async function analyze(): Promise<void> {
       setStatus({ kind: 'analyzing' })
 
+      // A drag-and-dropped file (no songId yet) might already be in the library from a previous
+      // session — reuse its saved id/blocks instead of re-inserting (which would violate the
+      // file_path UNIQUE constraint).
+      const existingSong = song.songId === undefined ? await window.api.db.findSongByPath(song.filePath) : undefined
+      if (cancelled) return
+
       const arrayBuffer = await window.api.readAudioFile(song.filePath)
       const analysis = await analyzeSong(arrayBuffer)
       monoSamplesRef.current = analysis.monoSamples
       sampleRateRef.current = analysis.sampleRate
-      const blocks = song.initialBlocks ?? analysis.blocks
+      const blocks = song.initialBlocks ?? existingSong?.blocks ?? analysis.blocks
 
       if (cancelled || !waveformContainerRef.current) return
 
       if (song.songId !== undefined) {
         songIdRef.current = song.songId
+      } else if (existingSong) {
+        songIdRef.current = existingSong.id
       } else {
         const inserted = await window.api.db.insertSong({
           filePath: song.filePath,
