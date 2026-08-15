@@ -102,11 +102,7 @@ function createWindow(): void {
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     const debugFile = process.env['DROP_COUNT_DEBUG_FILE']
-    const debugRatio = process.env['DROP_COUNT_DEBUG_RATIO']
-    const params = new URLSearchParams()
-    if (debugFile) params.set('debugFile', debugFile)
-    if (debugRatio) params.set('debugRatio', debugRatio)
-    const query = params.toString() ? `?${params.toString()}` : ''
+    const query = debugFile ? `?debugFile=${encodeURIComponent(debugFile)}` : ''
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] + query)
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))

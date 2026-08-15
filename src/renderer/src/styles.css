@@ -279,9 +279,30 @@ body {
   gap: 8px;
 }
 
-.bpm-ratios {
+.bpm-stepper {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
+}
+
+.bpm-stepper__value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: center;
+}
+
+.tap-tempo__button {
+  min-width: 56px;
+}
+
+.tap-tempo__reading {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tap-tempo__reset {
+  padding: 6px 10px;
 }
 
 .manual-override input {

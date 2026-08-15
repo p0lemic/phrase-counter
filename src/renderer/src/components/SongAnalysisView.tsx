@@ -7,6 +7,7 @@ import { computePhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis
 import { markDrops } from '../audio-analysis/dropDetection'
 import { formatBlocks, type Block } from '../audio-analysis/formatBlocks'
 import { blockBoundaryTimesSec, mergeWithNext, shiftBoundary, splitInHalf, toggleDrop } from '../audio-analysis/blockEditing'
+import { computeTapBpm } from '../audio-analysis/tapTempo'
 
 interface Song {
   filePath: string
@@ -26,14 +27,10 @@ interface AnalysisResult {
 
 type Status = { kind: 'analyzing' } | { kind: 'ready' } | { kind: 'error'; message: string }
 
-const BPM_RATIO_PRESETS: { label: string; ratio: number }[] = [
-  { label: '½×', ratio: 1 / 2 },
-  { label: '⅔×', ratio: 2 / 3 },
-  { label: '¾×', ratio: 3 / 4 },
-  { label: '4/3×', ratio: 4 / 3 },
-  { label: '3/2×', ratio: 3 / 2 },
-  { label: '2×', ratio: 2 }
-]
+/** A gap this long between taps means the user started a fresh tap-tempo sequence. */
+const TAP_RESET_GAP_MS = 2000
+/** Only the most recent taps count, so an old, now-irrelevant rhythm can't drag the average. */
+const TAP_MAX_COUNT = 8
 
 const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
   '.mp3': 'audio/mpeg',
@@ -70,6 +67,8 @@ export default function SongAnalysisView({
   const [manualBpmInput, setManualBpmInput] = useState('')
   const [manualOffsetInput, setManualOffsetInput] = useState('')
   const [copyFeedback, setCopyFeedback] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [tapTimestampsMs, setTapTimestampsMs] = useState<number[]>([])
 
   // Runs the analysis pipeline once per song and sets up the waveform.
   useEffect(() => {
@@ -79,6 +78,8 @@ export default function SongAnalysisView({
     setWaveformReady(false)
     setManualBpmInput('')
     setManualOffsetInput('')
+    setTapTimestampsMs([])
+    setIsPlaying(false)
 
     async function analyze(): Promise<void> {
       setStatus({ kind: 'analyzing' })
@@ -125,6 +126,9 @@ export default function SongAnalysisView({
       wavesurfer.on('decode', () => {
         if (!cancelled) setWaveformReady(true)
       })
+      wavesurfer.on('play', () => setIsPlaying(true))
+      wavesurfer.on('pause', () => setIsPlaying(false))
+      wavesurfer.on('finish', () => setIsPlaying(false))
 
       setResult({
         bpm: analysis.bpm,
@@ -234,24 +238,36 @@ export default function SongAnalysisView({
     setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, phraseEnergies, blocks })
   }
 
-  /**
-   * Re-interprets the current BPM as a simple ratio of itself, keeping the same first-kick anchor.
-   * Aimed at "gallop"/triplet kick patterns common in hard makina/hardcore, where the raw kick rate
-   * the detector locks onto is a clean multiple of the tempo DJs actually label the track with (e.g.
-   * a real 160 BPM track with a 3-against-4 kick pattern gets detected at 216 = 160 × 4/3). No signal
-   * analysis can tell which grouping is "correct" — this just makes retrying the common ones a click
-   * instead of typing in an exact number.
-   */
-  function applyBpmRatio(ratio: number): void {
+  /** Nudges the BPM by a small amount, keeping the same first-kick anchor. */
+  function stepBpm(deltaBpm: number): void {
     if (!result) return
-    recomputeFromManualBpm(result.bpm * ratio, result.phraseTimesSec[0] ?? 0)
+    recomputeFromManualBpm(result.bpm + deltaBpm, result.phraseTimesSec[0] ?? 0)
   }
 
-  useEffect(() => {
-    if (status.kind !== 'ready') return
-    const debugRatio = new URLSearchParams(window.location.search).get('debugRatio')
-    if (debugRatio) applyBpmRatio(Number(debugRatio))
-  }, [status.kind])
+  function togglePlayback(): void {
+    wavesurferRef.current?.playPause()
+  }
+
+  function handleTap(): void {
+    const now = performance.now()
+    setTapTimestampsMs((previous) => {
+      const lastTap = previous[previous.length - 1]
+      const isFreshSequence = lastTap !== undefined && now - lastTap > TAP_RESET_GAP_MS
+      const taps = isFreshSequence ? [] : previous
+      return [...taps, now].slice(-TAP_MAX_COUNT)
+    })
+  }
+
+  function resetTaps(): void {
+    setTapTimestampsMs([])
+  }
+
+  function applyTapBpm(): void {
+    const bpm = computeTapBpm(tapTimestampsMs)
+    if (!result || bpm === null) return
+    recomputeFromManualBpm(bpm, result.phraseTimesSec[0] ?? 0)
+    resetTaps()
+  }
 
   function playBlock(index: number): void {
     if (!result || !wavesurferRef.current) return
@@ -265,6 +281,8 @@ export default function SongAnalysisView({
     setCopyFeedback(true)
     setTimeout(() => setCopyFeedback(false), 1500)
   }
+
+  const tapBpm = computeTapBpm(tapTimestampsMs)
 
   return (
     <div className="song-view">
@@ -342,14 +360,32 @@ export default function SongAnalysisView({
       {result && (
         <div className="manual-override">
           <div className="manual-override__row">
-            <span>¿El BPM no encaja? Prueba una relación simple del detectado:</span>
-            <div className="bpm-ratios">
-              {BPM_RATIO_PRESETS.map(({ label, ratio }) => (
-                <button key={label} onClick={() => applyBpmRatio(ratio)}>
-                  {label}
-                </button>
-              ))}
+            <span>¿El BPM no encaja?</span>
+            <div className="bpm-stepper">
+              <button onClick={() => stepBpm(-1)} title="Restar 1 BPM">
+                −
+              </button>
+              <span className="bpm-stepper__value">{Math.round(result.bpm)}</span>
+              <button onClick={() => stepBpm(1)} title="Sumar 1 BPM">
+                +
+              </button>
             </div>
+
+            <button onClick={togglePlayback}>{isPlaying ? '⏸ Pausar' : '▶ Reproducir'}</button>
+            <button className="tap-tempo__button" onClick={handleTap}>
+              Tap
+            </button>
+            {tapBpm !== null && (
+              <>
+                <span className="tap-tempo__reading">
+                  {Math.round(tapBpm)} BPM ({tapTimestampsMs.length} taps)
+                </span>
+                <button onClick={applyTapBpm}>Usar</button>
+                <button className="tap-tempo__reset" onClick={resetTaps} title="Reiniciar taps">
+                  ✕
+                </button>
+              </>
+            )}
           </div>
 
           <div className="manual-override__row">
