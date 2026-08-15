@@ -26,6 +26,15 @@ interface AnalysisResult {
 
 type Status = { kind: 'analyzing' } | { kind: 'ready' } | { kind: 'error'; message: string }
 
+const BPM_RATIO_PRESETS: { label: string; ratio: number }[] = [
+  { label: '½×', ratio: 1 / 2 },
+  { label: '⅔×', ratio: 2 / 3 },
+  { label: '¾×', ratio: 3 / 4 },
+  { label: '4/3×', ratio: 4 / 3 },
+  { label: '3/2×', ratio: 3 / 2 },
+  { label: '2×', ratio: 2 }
+]
+
 const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
@@ -225,6 +234,25 @@ export default function SongAnalysisView({
     setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, phraseEnergies, blocks })
   }
 
+  /**
+   * Re-interprets the current BPM as a simple ratio of itself, keeping the same first-kick anchor.
+   * Aimed at "gallop"/triplet kick patterns common in hard makina/hardcore, where the raw kick rate
+   * the detector locks onto is a clean multiple of the tempo DJs actually label the track with (e.g.
+   * a real 160 BPM track with a 3-against-4 kick pattern gets detected at 216 = 160 × 4/3). No signal
+   * analysis can tell which grouping is "correct" — this just makes retrying the common ones a click
+   * instead of typing in an exact number.
+   */
+  function applyBpmRatio(ratio: number): void {
+    if (!result) return
+    recomputeFromManualBpm(result.bpm * ratio, result.phraseTimesSec[0] ?? 0)
+  }
+
+  useEffect(() => {
+    if (status.kind !== 'ready') return
+    const debugRatio = new URLSearchParams(window.location.search).get('debugRatio')
+    if (debugRatio) applyBpmRatio(Number(debugRatio))
+  }, [status.kind])
+
   function playBlock(index: number): void {
     if (!result || !wavesurferRef.current) return
     const boundaryTimesSec = blockBoundaryTimesSec(result.blocks, result.phraseTimesSec, result.durationSec)
@@ -313,26 +341,39 @@ export default function SongAnalysisView({
 
       {result && (
         <div className="manual-override">
-          <span>¿La rejilla no encaja? Recalcula con BPM y offset manuales:</span>
-          <input
-            type="number"
-            placeholder={`BPM (auto: ${Math.round(result.bpm)})`}
-            value={manualBpmInput}
-            onChange={(e) => setManualBpmInput(e.target.value)}
-          />
-          <input
-            type="number"
-            step="0.01"
-            placeholder="offset del primer bombo (s)"
-            value={manualOffsetInput}
-            onChange={(e) => setManualOffsetInput(e.target.value)}
-          />
-          <button
-            disabled={!manualBpmInput || !manualOffsetInput}
-            onClick={() => recomputeFromManualBpm(Number(manualBpmInput), Number(manualOffsetInput))}
-          >
-            Recalcular rejilla
-          </button>
+          <div className="manual-override__row">
+            <span>¿El BPM no encaja? Prueba una relación simple del detectado:</span>
+            <div className="bpm-ratios">
+              {BPM_RATIO_PRESETS.map(({ label, ratio }) => (
+                <button key={label} onClick={() => applyBpmRatio(ratio)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="manual-override__row">
+            <span>O recalcula con BPM y offset manuales:</span>
+            <input
+              type="number"
+              placeholder={`BPM (auto: ${Math.round(result.bpm)})`}
+              value={manualBpmInput}
+              onChange={(e) => setManualBpmInput(e.target.value)}
+            />
+            <input
+              type="number"
+              step="0.01"
+              placeholder="offset del primer bombo (s)"
+              value={manualOffsetInput}
+              onChange={(e) => setManualOffsetInput(e.target.value)}
+            />
+            <button
+              disabled={!manualBpmInput || !manualOffsetInput}
+              onClick={() => recomputeFromManualBpm(Number(manualBpmInput), Number(manualOffsetInput))}
+            >
+              Recalcular rejilla
+            </button>
+          </div>
         </div>
       )}
     </div>

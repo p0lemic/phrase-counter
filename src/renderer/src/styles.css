@@ -263,14 +263,25 @@ body {
 
 .manual-override {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
   margin-top: 32px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
   color: var(--text-dim);
   font-size: 13px;
+}
+
+.manual-override__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bpm-ratios {
+  display: flex;
+  gap: 4px;
 }
 
 .manual-override input {

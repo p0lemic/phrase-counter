@@ -3,6 +3,10 @@ export interface KickDetectionOptions {
   minBpm?: number
   /** Fastest plausible tempo; sets the minimum spacing between accepted kicks. */
   maxBpm?: number
+  /** Low edge of the kick-drum bandpass filter, in Hz. */
+  lowHz?: number
+  /** High edge of the kick-drum bandpass filter, in Hz. */
+  highHz?: number
 }
 
 interface BiquadCoefficients {
@@ -110,9 +114,9 @@ export function detectKicks(
   sampleRate: number,
   options: KickDetectionOptions = {}
 ): number[] {
-  const { minBpm = 120, maxBpm = 220 } = options
+  const { minBpm = 120, maxBpm = 220, lowHz = 40, highHz = 150 } = options
 
-  const kickBand = bandpass(samples, sampleRate, 40, 150)
+  const kickBand = bandpass(samples, sampleRate, lowHz, highHz)
   const envelope = computeEnvelope(kickBand, sampleRate, 10)
 
   const adaptiveWindowSamples = Math.round(sampleRate * (60 / minBpm) * 1.5)
