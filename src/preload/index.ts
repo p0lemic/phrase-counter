@@ -14,7 +14,9 @@ const api = {
     deleteSong: (id: number): Promise<void> => ipcRenderer.invoke('db:delete-song', id)
   },
   openAudioFilesDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-files'),
-  openAudioFolderDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-folder')
+  openAudioFolderDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-folder'),
+  exportLibrary: (content: string, defaultFileName: string): Promise<boolean> =>
+    ipcRenderer.invoke('dialog:export-library', content, defaultFileName)
 }
 
 contextBridge.exposeInMainWorld('electron', electronAPI)

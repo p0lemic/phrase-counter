@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import {
@@ -62,6 +62,16 @@ ipcMain.handle('dialog:open-audio-folder', async (): Promise<string[]> => {
   if (result.canceled || result.filePaths.length === 0) return []
   return scanFolderForAudioFiles(result.filePaths[0])
 })
+
+ipcMain.handle(
+  'dialog:export-library',
+  async (_event, content: string, defaultFileName: string): Promise<boolean> => {
+    const result = await dialog.showSaveDialog({ defaultPath: defaultFileName })
+    if (result.canceled || !result.filePath) return false
+    await writeFile(result.filePath, content, 'utf-8')
+    return true
+  }
+)
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({

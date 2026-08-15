@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { analyzeSong } from '../audio-analysis/analyzeSong'
 import { formatBlocks } from '../audio-analysis/formatBlocks'
+import { songsToCsv, songsToJson } from '../audio-analysis/exportLibrary'
 import type { SongRecord } from '../../../shared/song'
 
 interface OpenSongRequest {
@@ -74,11 +75,25 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     await refresh()
   }
 
+  async function handleExportCsv(): Promise<void> {
+    await window.api.exportLibrary(songsToCsv(songs), 'drop-count.csv')
+  }
+
+  async function handleExportJson(): Promise<void> {
+    await window.api.exportLibrary(songsToJson(songs), 'drop-count.json')
+  }
+
   return (
     <div className="library">
       <div className="library__toolbar">
         <button onClick={handleAddFiles}>+ Archivos</button>
         <button onClick={handleAddFolder}>+ Carpeta</button>
+        {songs.length > 0 && (
+          <>
+            <button onClick={handleExportCsv}>Exportar CSV</button>
+            <button onClick={handleExportJson}>Exportar JSON</button>
+          </>
+        )}
         {addProgress && (
           <span className="library__progress">
             Analizando {addProgress.current}/{addProgress.total}…
