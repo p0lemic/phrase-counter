@@ -71,7 +71,16 @@ body {
   word-break: break-all;
 }
 
-.song-view__placeholder {
-  margin-top: 24px;
+.song-view__status {
   color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 16px;
+}
+
+.song-view__status--error {
+  color: var(--accent);
+}
+
+.waveform {
+  margin-top: 16px;
 }

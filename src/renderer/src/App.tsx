@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import SongAnalysisView from './components/SongAnalysisView'
 
 interface DroppedSong {
   filePath: string
@@ -46,23 +47,19 @@ function DropZone({ onSongDropped }: { onSongDropped: (song: DroppedSong) => voi
   )
 }
 
-function SongView({ song, onClose }: { song: DroppedSong; onClose: () => void }): React.JSX.Element {
-  return (
-    <div className="song-view">
-      <button className="back-button" onClick={onClose}>
-        ← Volver
-      </button>
-      <h2>{song.fileName}</h2>
-      <p className="song-view__path">{song.filePath}</p>
-      <p className="song-view__placeholder">
-        El análisis de audio (BPM, rejilla de frases, bloques) se implementará en los siguientes hitos.
-      </p>
-    </div>
-  )
+/** Dev-only convenience: `?debugFile=<path>` auto-opens a song, to test without a real drag-and-drop. */
+function useDebugFileFromQuery(onSongReady: (song: DroppedSong) => void): void {
+  useEffect(() => {
+    const debugFile = new URLSearchParams(window.location.search).get('debugFile')
+    if (!debugFile) return
+    onSongReady({ filePath: debugFile, fileName: debugFile.split('/').pop() ?? debugFile })
+    // Only ever run once, from the URL present at load time.
+  }, [])
 }
 
 export default function App(): React.JSX.Element {
   const [currentSong, setCurrentSong] = useState<DroppedSong | null>(null)
+  useDebugFileFromQuery(setCurrentSong)
 
   return (
     <main className="app">
@@ -70,7 +67,7 @@ export default function App(): React.JSX.Element {
         <h1>Drop Count</h1>
       </header>
       {currentSong ? (
-        <SongView song={currentSong} onClose={() => setCurrentSong(null)} />
+        <SongAnalysisView song={currentSong} onClose={() => setCurrentSong(null)} />
       ) : (
         <DropZone onSongDropped={setCurrentSong} />
       )}
