@@ -1,6 +1,6 @@
 import { decodeAudioBuffer } from './decode'
-import { detectKicks } from './kickDetection'
-import { buildBeatGrid, phraseBoundariesSec } from './bpmGrid'
+import { detectRhythm } from './essentiaRhythm'
+import { phraseBoundariesSec } from './bpmGrid'
 import { computePhraseEnergies, groupPhrasesIntoBlocks } from './energySegmentation'
 import { markDrops } from './dropDetection'
 import type { Block } from './formatBlocks'
@@ -17,11 +17,10 @@ export interface SongAnalysis {
 
 export async function analyzeSong(arrayBuffer: ArrayBuffer): Promise<SongAnalysis> {
   const { monoSamples, sampleRate, durationSec } = await decodeAudioBuffer(arrayBuffer)
-  const kickTimesSec = detectKicks(monoSamples, sampleRate)
-  const grid = buildBeatGrid(kickTimesSec, durationSec)
-  const phraseTimesSec = phraseBoundariesSec(grid.kickTimesSec)
+  const { bpm, kickTimesSec } = await detectRhythm(monoSamples)
+  const phraseTimesSec = phraseBoundariesSec(kickTimesSec)
   const phraseEnergies = computePhraseEnergies(monoSamples, sampleRate, phraseTimesSec, durationSec)
   const blocks = markDrops(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
 
-  return { bpm: grid.bpm, durationSec, monoSamples, sampleRate, phraseTimesSec, phraseEnergies, blocks }
+  return { bpm, durationSec, monoSamples, sampleRate, phraseTimesSec, phraseEnergies, blocks }
 }

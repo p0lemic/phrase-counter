@@ -1,0 +1,60 @@
+import * as EssentiaWasmModule from 'essentia.js/dist/essentia-wasm.umd.js'
+import * as EssentiaCoreModule from 'essentia.js/dist/essentia.js-core.umd.js'
+
+export interface RhythmResult {
+  bpm: number
+  kickTimesSec: number[]
+}
+
+interface EssentiaInstance {
+  arrayToVector: (array: Float32Array) => unknown
+  vectorToArray: (vector: unknown) => Float32Array
+  RhythmExtractor2013: (
+    signal: unknown,
+    maxTempo: number,
+    method: 'multifeature' | 'degara',
+    minTempo: number
+  ) => { bpm: number; ticks: unknown }
+}
+
+type EssentiaConstructor = new (wasmModule: unknown) => EssentiaInstance
+
+// These are CJS/UMD builds with an ambiguous export shape (both `module.exports = X` and a named
+// `exports.EssentiaWASM = X` appear in the same file) — different bundlers resolve that
+// differently (Vite's esbuild-based dev pre-bundling vs. Vitest's transform disagree on which one
+// wins), so we look up the real value defensively instead of trusting a single import form.
+function unwrapCjsExport<T>(namespaceImport: unknown, namedKey: string): T {
+  const namespace = namespaceImport as Record<string, unknown>
+  return (namespace[namedKey] ?? namespace.default ?? namespace) as T
+}
+
+const EssentiaWASM = unwrapCjsExport<unknown>(EssentiaWasmModule, 'EssentiaWASM')
+const Essentia = unwrapCjsExport<EssentiaConstructor>(EssentiaCoreModule, 'Essentia')
+
+let essentiaPromise: Promise<EssentiaInstance> | null = null
+
+async function loadEssentia(): Promise<EssentiaInstance> {
+  if (!essentiaPromise) {
+    essentiaPromise = Promise.resolve(EssentiaWASM).then((wasmModule) => new Essentia(wasmModule))
+  }
+  return essentiaPromise
+}
+
+/**
+ * Detects BPM and beat (kick) positions using Essentia's RhythmExtractor2013 (multi-feature
+ * method): it combines several onset detection functions with dynamic-programming beat tracking,
+ * which tracks the musically "felt" beat through the whole track rather than just the most
+ * frequent low-frequency pulse — this is what correctly resolves "gallop"/triplet kick patterns
+ * that fooled a simpler peak-picking + interval approach.
+ */
+export async function detectRhythm(
+  monoSamples: Float32Array,
+  minBpm = 100,
+  maxBpm = 250
+): Promise<RhythmResult> {
+  const essentia = await loadEssentia()
+  const vectorSignal = essentia.arrayToVector(monoSamples)
+  const result = essentia.RhythmExtractor2013(vectorSignal, maxBpm, 'multifeature', minBpm)
+  const kickTimesSec = Array.from(essentia.vectorToArray(result.ticks))
+  return { bpm: result.bpm, kickTimesSec }
+}
