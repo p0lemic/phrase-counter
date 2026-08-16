@@ -1,7 +1,7 @@
 import { decodeAudioBuffer } from './decode'
 import { detectRhythm } from './essentiaRhythm'
 import { buildBeatGridFromBpm, phraseBoundariesSec } from './bpmGrid'
-import { computePhraseEnergies, groupPhrasesIntoBlocks } from './energySegmentation'
+import { computeKickBandPhraseEnergies, groupPhrasesIntoBlocks } from './energySegmentation'
 import { markBreakdowns } from './breakdownDetection'
 import type { Block } from './formatBlocks'
 
@@ -24,7 +24,7 @@ export async function analyzeSong(arrayBuffer: ArrayBuffer): Promise<SongAnalysi
   // phrase lines out of sync with the music over the length of the track.
   const grid = buildBeatGridFromBpm(bpm, kickTimesSec[0] ?? 0, durationSec)
   const phraseTimesSec = phraseBoundariesSec(grid.kickTimesSec)
-  const phraseEnergies = computePhraseEnergies(monoSamples, sampleRate, phraseTimesSec, durationSec)
+  const phraseEnergies = computeKickBandPhraseEnergies(monoSamples, sampleRate, phraseTimesSec, durationSec)
   const blocks = markBreakdowns(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
 
   return { bpm, durationSec, monoSamples, sampleRate, phraseTimesSec, phraseEnergies, blocks }

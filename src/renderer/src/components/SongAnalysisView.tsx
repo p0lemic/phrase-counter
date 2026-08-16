@@ -4,7 +4,7 @@ import RegionsPlugin, { type Region } from 'wavesurfer.js/plugins/regions'
 import { analyzeSong } from '../audio-analysis/analyzeSong'
 import { decodeAudioBuffer } from '../audio-analysis/decode'
 import { buildBeatGridFromBpm, phraseBoundariesSec } from '../audio-analysis/bpmGrid'
-import { computePhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis/energySegmentation'
+import { computeKickBandPhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis/energySegmentation'
 import { markBreakdowns } from '../audio-analysis/breakdownDetection'
 import { formatBlocks, type Block } from '../audio-analysis/formatBlocks'
 import {
@@ -275,7 +275,7 @@ export default function SongAnalysisView({
     if (!result || !monoSamplesRef.current || sampleRateRef.current === null) return
     const grid = buildBeatGridFromBpm(bpm, offsetSec, result.durationSec)
     const phraseTimesSec = phraseBoundariesSec(grid.kickTimesSec)
-    const phraseEnergies = computePhraseEnergies(
+    const phraseEnergies = computeKickBandPhraseEnergies(
       monoSamplesRef.current,
       sampleRateRef.current,
       phraseTimesSec,
