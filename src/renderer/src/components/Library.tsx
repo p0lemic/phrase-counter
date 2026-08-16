@@ -23,8 +23,7 @@ function formatDuration(durationMs: number): string {
 type SortKey = 'title' | 'bpm' | 'durationMs'
 type Sort = { key: SortKey; direction: 'asc' | 'desc' }
 
-function sortSongs(songs: SongRecord[], sort: Sort | null): SongRecord[] {
-  if (!sort) return songs
+function sortSongs(songs: SongRecord[], sort: Sort): SongRecord[] {
   const factor = sort.direction === 'asc' ? 1 : -1
   return [...songs].sort((a, b) => {
     if (sort.key === 'title') return a.title.localeCompare(b.title) * factor
@@ -36,7 +35,8 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
   const [songs, setSongs] = useState<SongRecord[]>([])
   const [addProgress, setAddProgress] = useState<{ current: number; total: number } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [sort, setSort] = useState<Sort | null>(null)
+  const [sort, setSort] = useState<Sort>({ key: 'title', direction: 'asc' })
+  const [searchQuery, setSearchQuery] = useState('')
 
   async function refresh(): Promise<void> {
     const fresh = await window.api.db.listSongs()
@@ -118,22 +118,29 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     })
   }
 
-  /** Cycles a column through ascending → descending → back to the default (insertion) order. */
+  /** Clicking a new column sorts it ascending; clicking the active column flips its direction. */
   function toggleSort(key: SortKey): void {
-    setSort((previous) => {
-      if (!previous || previous.key !== key) return { key, direction: 'asc' }
-      if (previous.direction === 'asc') return { key, direction: 'desc' }
-      return null
-    })
+    setSort((previous) =>
+      previous.key === key ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }
+    )
   }
 
   function sortIndicator(key: SortKey): string {
-    if (sort?.key !== key) return ''
+    if (sort.key !== key) return ''
     return sort.direction === 'asc' ? ' ▲' : ' ▼'
   }
 
   function toggleSelectAll(): void {
-    setSelectedIds((previous) => (previous.size === songs.length ? new Set() : new Set(songs.map((song) => song.id))))
+    const visibleIds = visibleSongs.map((song) => song.id)
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
+    setSelectedIds((previous) => {
+      const next = new Set(previous)
+      for (const id of visibleIds) {
+        if (allVisibleSelected) next.delete(id)
+        else next.add(id)
+      }
+      return next
+    })
   }
 
   async function handleBulkDelete(): Promise<void> {
@@ -155,9 +162,25 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     await window.api.exportLibrary(songsToJson(songs), 'drop-count.json')
   }
 
+  const query = searchQuery.trim().toLowerCase()
+  const filteredSongs = query ? songs.filter((song) => song.title.toLowerCase().includes(query)) : songs
+  const visibleSongs = sortSongs(filteredSongs, sort)
+
   return (
     <div className="library">
       <div className="library__toolbar">
+        <span className="library__search">
+          🔍
+          <input
+            type="text"
+            placeholder="Buscar por título…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </span>
+        <span className="library__count">
+          {query ? `${visibleSongs.length} de ${songs.length}` : songs.length} {songs.length === 1 ? 'canción' : 'canciones'}
+        </span>
         <button onClick={handleAddFiles}>+ Archivos</button>
         <button onClick={handleAddFolder}>+ Carpeta</button>
         <button onClick={handleRescanFolder} title="Vuelve a analizar todos los archivos de una carpeta, incluidos los que ya estén en la librería">
@@ -185,32 +208,43 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
         <p className="library__empty">
           Tu librería está vacía. Añade canciones o arrastra un archivo de audio.
         </p>
+      ) : visibleSongs.length === 0 ? (
+        <p className="library__empty">Ninguna canción coincide con "{searchQuery}".</p>
       ) : (
         <table className="library__table">
+          <colgroup>
+            <col style={{ width: '32px' }} />
+            <col style={{ width: '40px' }} />
+            <col style={{ width: '40%' }} />
+            <col style={{ width: '70px' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '90px' }} />
+          </colgroup>
           <thead>
             <tr>
               <th>
                 <input
                   type="checkbox"
-                  checked={selectedIds.size === songs.length}
+                  checked={visibleSongs.length > 0 && visibleSongs.every((song) => selectedIds.has(song.id))}
                   onChange={toggleSelectAll}
                   title="Seleccionar todas"
                 />
               </th>
+              <th className="library__index">#</th>
               <th className="library__sortable" onClick={() => toggleSort('title')}>
                 Título{sortIndicator('title')}
               </th>
-              <th className="library__sortable" onClick={() => toggleSort('bpm')}>
+              <th className="library__sortable library__index" onClick={() => toggleSort('bpm')}>
                 BPM{sortIndicator('bpm')}
               </th>
               <th>Resultado</th>
-              <th className="library__sortable" onClick={() => toggleSort('durationMs')}>
+              <th className="library__sortable library__index" onClick={() => toggleSort('durationMs')}>
                 Duración{sortIndicator('durationMs')}
               </th>
             </tr>
           </thead>
           <tbody>
-            {sortSongs(songs, sort).map((song) => (
+            {visibleSongs.map((song, i) => (
               <tr
                 key={song.id}
                 onClick={() => onOpenSong({ filePath: song.filePath, fileName: song.title })}
@@ -223,10 +257,11 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
                     onClick={(e) => e.stopPropagation()}
                   />
                 </td>
-                <td>{song.title}</td>
-                <td>{Math.round(song.bpm)}</td>
+                <td className="library__index">{i + 1}</td>
+                <td className="library__title">{song.title}</td>
+                <td className="library__index">{Math.round(song.bpm)}</td>
                 <td className="library__result">{formatBlocks(song.blocks)}</td>
-                <td>{formatDuration(song.durationMs)}</td>
+                <td className="library__index">{formatDuration(song.durationMs)}</td>
               </tr>
             ))}
           </tbody>
