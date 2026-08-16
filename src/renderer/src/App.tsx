@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import SongAnalysisView from './components/SongAnalysisView'
 import Library from './components/Library'
-import type { Block } from './audio-analysis/formatBlocks'
 
 interface OpenSong {
   filePath: string
   fileName: string
-  songId?: number
-  initialBlocks?: Block[]
 }
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.aiff', '.m4a', '.ogg']

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { NewSongRecord, SongMetadata, SongRecord } from '../shared/song'
+import type { NewSongRecord, SongAnalysisUpdate, SongMetadata, SongRecord } from '../shared/song'
 
 const api = {
   readAudioFile: (filePath: string): Promise<ArrayBuffer> => ipcRenderer.invoke('read-audio-file', filePath),
@@ -10,8 +10,8 @@ const api = {
     findSongByPath: (filePath: string): Promise<SongRecord | undefined> =>
       ipcRenderer.invoke('db:find-song-by-path', filePath),
     insertSong: (song: NewSongRecord): Promise<SongRecord> => ipcRenderer.invoke('db:insert-song', song),
-    updateSongBlocks: (id: number, blocks: SongRecord['blocks']): Promise<void> =>
-      ipcRenderer.invoke('db:update-song-blocks', id, blocks),
+    updateSongAnalysis: (id: number, update: SongAnalysisUpdate): Promise<void> =>
+      ipcRenderer.invoke('db:update-song-analysis', id, update),
     deleteSong: (id: number): Promise<void> => ipcRenderer.invoke('db:delete-song', id)
   },
   openAudioFilesDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-files'),

@@ -7,8 +7,6 @@ import type { SongRecord } from '../../../shared/song'
 interface OpenSongRequest {
   filePath: string
   fileName: string
-  songId: number
-  initialBlocks: SongRecord['blocks']
 }
 
 function basename(filePath: string): string {
@@ -48,6 +46,7 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
           title: basename(newPaths[i]),
           bpm: analysis.bpm,
           durationMs: Math.round(analysis.durationSec * 1000),
+          phraseTimesSec: analysis.phraseTimesSec,
           blocks: analysis.blocks
         })
       } catch {
@@ -120,14 +119,7 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
             {songs.map((song) => (
               <tr
                 key={song.id}
-                onClick={() =>
-                  onOpenSong({
-                    filePath: song.filePath,
-                    fileName: song.title,
-                    songId: song.id,
-                    initialBlocks: song.blocks
-                  })
-                }
+                onClick={() => onOpenSong({ filePath: song.filePath, fileName: song.title })}
               >
                 <td>{song.title}</td>
                 <td>{Math.round(song.bpm)}</td>

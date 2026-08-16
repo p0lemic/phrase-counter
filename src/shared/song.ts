@@ -10,12 +10,17 @@ export interface SongRecord {
   title: string
   bpm: number
   durationMs: number
+  /** Phrase-grid line timestamps, cached so reopening a song never re-runs BPM/kick detection. */
+  phraseTimesSec: number[]
   blocks: Block[]
   createdAt: string
   updatedAt: string
 }
 
 export type NewSongRecord = Omit<SongRecord, 'id' | 'createdAt' | 'updatedAt'>
+
+/** The subset of analysis that can change after the initial insert (BPM/grid edits, block edits). */
+export type SongAnalysisUpdate = Pick<SongRecord, 'bpm' | 'phraseTimesSec' | 'blocks'>
 
 /** Tags read straight from the audio file (ID3 etc.) — separate from our own DSP analysis. */
 export interface SongMetadata {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin, { type Region } from 'wavesurfer.js/plugins/regions'
 import { analyzeSong } from '../audio-analysis/analyzeSong'
+import { decodeAudioBuffer } from '../audio-analysis/decode'
 import { buildBeatGridFromBpm, phraseBoundariesSec } from '../audio-analysis/bpmGrid'
 import { computePhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis/energySegmentation'
 import { markBreakdowns } from '../audio-analysis/breakdownDetection'
@@ -19,16 +20,12 @@ import type { SongMetadata } from '../../../shared/song'
 interface Song {
   filePath: string
   fileName: string
-  /** Existing library entry to reopen, if any. Its saved blocks win over freshly auto-detected ones. */
-  songId?: number
-  initialBlocks?: Block[]
 }
 
 interface AnalysisResult {
   bpm: number
   durationSec: number
   phraseTimesSec: number[]
-  phraseEnergies: number[]
   blocks: Block[]
 }
 
@@ -67,8 +64,6 @@ export default function SongAnalysisView({
   const monoSamplesRef = useRef<Float32Array | null>(null)
   const sampleRateRef = useRef<number | null>(null)
   const songIdRef = useRef<number | null>(null)
-  /** The fully automatic result, cached so "Reset" can restore it without re-running detection. */
-  const originalResultRef = useRef<AnalysisResult | null>(null)
 
   const [status, setStatus] = useState<Status>({ kind: 'analyzing' })
   const [result, setResult] = useState<AnalysisResult | null>(null)
@@ -79,6 +74,8 @@ export default function SongAnalysisView({
   const [copyFeedback, setCopyFeedback] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [tapTimestampsMs, setTapTimestampsMs] = useState<number[]>([])
+  /** True while "Reset" is re-running full automatic detection. */
+  const [isResetting, setIsResetting] = useState(false)
 
   // Runs the analysis pipeline once per song and sets up the waveform.
   useEffect(() => {
@@ -90,6 +87,7 @@ export default function SongAnalysisView({
     setPendingBpm(null)
     setTapTimestampsMs([])
     setIsPlaying(false)
+    setIsResetting(false)
 
     // Cover/title/artist/key/rating are a nice-to-have read from the file's own tags — fetched
     // independently of the analysis pipeline so a slow/missing tag never blocks it.
@@ -103,35 +101,64 @@ export default function SongAnalysisView({
     async function analyze(): Promise<void> {
       setStatus({ kind: 'analyzing' })
 
-      // A drag-and-dropped file (no songId yet) might already be in the library from a previous
-      // session — reuse its saved id/blocks instead of re-inserting (which would violate the
-      // file_path UNIQUE constraint).
-      const existingSong = song.songId === undefined ? await window.api.db.findSongByPath(song.filePath) : undefined
+      // A song can already be in the library from a previous session (opened from Library, or
+      // drag-and-dropped again) — reuse its saved analysis instead of re-inserting (which would
+      // violate the file_path UNIQUE constraint) and, when it has a cached grid, skip BPM/kick
+      // detection entirely so opening an already-analyzed song is instant.
+      const existingSong = await window.api.db.findSongByPath(song.filePath)
       if (cancelled) return
 
       const arrayBuffer = await window.api.readAudioFile(song.filePath)
-      const analysis = await analyzeSong(arrayBuffer)
-      monoSamplesRef.current = analysis.monoSamples
-      sampleRateRef.current = analysis.sampleRate
-      const blocks = song.initialBlocks ?? existingSong?.blocks ?? analysis.blocks
+      if (cancelled) return
 
-      if (cancelled || !waveformContainerRef.current) return
+      let bpm: number
+      let durationSec: number
+      let phraseTimesSec: number[]
+      let blocks: Block[]
+      let monoSamples: Float32Array
 
-      if (song.songId !== undefined) {
-        songIdRef.current = song.songId
-      } else if (existingSong) {
+      if (existingSong && existingSong.phraseTimesSec.length > 0) {
+        const decoded = await decodeAudioBuffer(arrayBuffer)
+        if (cancelled) return
+        monoSamples = decoded.monoSamples
+        sampleRateRef.current = decoded.sampleRate
+        bpm = existingSong.bpm
+        durationSec = decoded.durationSec
+        phraseTimesSec = existingSong.phraseTimesSec
+        blocks = existingSong.blocks
         songIdRef.current = existingSong.id
       } else {
-        const inserted = await window.api.db.insertSong({
-          filePath: song.filePath,
-          title: song.fileName,
-          bpm: analysis.bpm,
-          durationMs: Math.round(analysis.durationSec * 1000),
-          blocks
-        })
+        const analysis = await analyzeSong(arrayBuffer)
         if (cancelled) return
-        songIdRef.current = inserted.id
+        monoSamples = analysis.monoSamples
+        sampleRateRef.current = analysis.sampleRate
+        bpm = analysis.bpm
+        durationSec = analysis.durationSec
+        phraseTimesSec = analysis.phraseTimesSec
+        // A pre-existing record without a cached grid (from before this was tracked) keeps its
+        // saved/edited blocks; only the grid itself needed recomputing.
+        blocks = existingSong?.blocks ?? analysis.blocks
+
+        if (existingSong) {
+          songIdRef.current = existingSong.id
+          await window.api.db.updateSongAnalysis(existingSong.id, { bpm, phraseTimesSec, blocks })
+        } else {
+          const inserted = await window.api.db.insertSong({
+            filePath: song.filePath,
+            title: song.fileName,
+            bpm,
+            durationMs: Math.round(durationSec * 1000),
+            phraseTimesSec,
+            blocks
+          })
+          if (cancelled) return
+          songIdRef.current = inserted.id
+        }
       }
+
+      monoSamplesRef.current = monoSamples
+
+      if (cancelled || !waveformContainerRef.current) return
 
       // wavesurfer needs a playable URL; a file:// URL is blocked here since the
       // renderer's origin isn't file://, so we reuse the bytes we already read.
@@ -144,8 +171,8 @@ export default function SongAnalysisView({
         progressColor: '#4c4f5c',
         cursorColor: '#ff5d73',
         url: blobUrl,
-        peaks: [analysis.monoSamples],
-        duration: analysis.durationSec
+        peaks: [monoSamples],
+        duration: durationSec
       })
       wavesurferRef.current = wavesurfer
       regionsRef.current = wavesurfer.registerPlugin(RegionsPlugin.create())
@@ -157,24 +184,8 @@ export default function SongAnalysisView({
       wavesurfer.on('pause', () => setIsPlaying(false))
       wavesurfer.on('finish', () => setIsPlaying(false))
 
-      // Cached as-is (analysis.blocks, not the possibly-saved/edited `blocks`) so "Reset" always
-      // means "what automatic detection computes right now", regardless of what was loaded.
-      originalResultRef.current = {
-        bpm: analysis.bpm,
-        durationSec: analysis.durationSec,
-        phraseTimesSec: analysis.phraseTimesSec,
-        phraseEnergies: analysis.phraseEnergies,
-        blocks: analysis.blocks
-      }
-
-      setResult({
-        bpm: analysis.bpm,
-        durationSec: analysis.durationSec,
-        phraseTimesSec: analysis.phraseTimesSec,
-        phraseEnergies: analysis.phraseEnergies,
-        blocks
-      })
-      setPendingBpm(analysis.bpm)
+      setResult({ bpm, durationSec, phraseTimesSec, blocks })
+      setPendingBpm(bpm)
       setStatus({ kind: 'ready' })
     }
 
@@ -193,11 +204,8 @@ export default function SongAnalysisView({
       monoSamplesRef.current = null
       sampleRateRef.current = null
       songIdRef.current = null
-      originalResultRef.current = null
       if (blobUrl) URL.revokeObjectURL(blobUrl)
     }
-    // Only re-run when the song identity itself changes — songId/initialBlocks
-    // are read once at analysis time and shouldn't retrigger on every render.
   }, [song.filePath])
 
   // Redraws the phrase grid, block boundaries and breakdown highlight whenever the analysis changes.
@@ -250,15 +258,15 @@ export default function SongAnalysisView({
     })
   }, [result, waveformReady])
 
-  function persistBlocks(blocks: Block[]): void {
+  function persistAnalysis(bpm: number, phraseTimesSec: number[], blocks: Block[]): void {
     if (songIdRef.current === null) return
-    window.api.db.updateSongBlocks(songIdRef.current, blocks).catch(() => {})
+    window.api.db.updateSongAnalysis(songIdRef.current, { bpm, phraseTimesSec, blocks }).catch(() => {})
   }
 
   function updateBlocks(updater: (blocks: Block[]) => Block[]): void {
     if (!result) return
     const blocks = updater(result.blocks)
-    persistBlocks(blocks)
+    persistAnalysis(result.bpm, result.phraseTimesSec, blocks)
     setResult({ ...result, blocks })
   }
 
@@ -274,8 +282,8 @@ export default function SongAnalysisView({
       result.durationSec
     )
     const blocks = markBreakdowns(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
-    persistBlocks(blocks)
-    setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, phraseEnergies, blocks })
+    persistAnalysis(grid.bpm, phraseTimesSec, blocks)
+    setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, blocks })
   }
 
   /** Applies the currently-shown pending BPM (auto/stepped/tapped) to the grid. */
@@ -284,14 +292,26 @@ export default function SongAnalysisView({
     recomputeFromBpm(pendingBpm, result.phraseTimesSec[0] ?? 0)
   }
 
-  /** Discards any BPM/grid/block edits and restores the fully automatic result. */
-  function resetToAutomatic(): void {
-    const original = originalResultRef.current
-    if (!original) return
-    const blocks = original.blocks.map((block) => ({ ...block }))
-    persistBlocks(blocks)
-    setResult({ ...original, blocks })
-    setPendingBpm(original.bpm)
+  /** Discards any BPM/grid/block edits and re-runs full automatic detection from scratch. */
+  async function resetToAutomatic(): Promise<void> {
+    if (!result || isResetting) return
+    setIsResetting(true)
+    try {
+      const arrayBuffer = await window.api.readAudioFile(song.filePath)
+      const analysis = await analyzeSong(arrayBuffer)
+      monoSamplesRef.current = analysis.monoSamples
+      sampleRateRef.current = analysis.sampleRate
+      persistAnalysis(analysis.bpm, analysis.phraseTimesSec, analysis.blocks)
+      setResult({
+        bpm: analysis.bpm,
+        durationSec: analysis.durationSec,
+        phraseTimesSec: analysis.phraseTimesSec,
+        blocks: analysis.blocks
+      })
+      setPendingBpm(analysis.bpm)
+    } finally {
+      setIsResetting(false)
+    }
   }
 
   /** Nudges the shown (not-yet-applied) BPM by a small amount. */
@@ -467,11 +487,18 @@ export default function SongAnalysisView({
           </div>
 
           <div className="manual-override__row">
-            <button onClick={recalculateGrid} disabled={pendingBpm === null || pendingBpm === result.bpm}>
+            <button
+              onClick={recalculateGrid}
+              disabled={isResetting || pendingBpm === null || pendingBpm === result.bpm}
+            >
               Recalcular rejilla
             </button>
-            <button onClick={resetToAutomatic} title="Descartar ajustes y volver a la detección automática">
-              Reset
+            <button
+              onClick={resetToAutomatic}
+              disabled={isResetting}
+              title="Descartar ajustes y volver a ejecutar la detección automática"
+            >
+              {isResetting ? 'Analizando…' : 'Reset'}
             </button>
           </div>
         </div>

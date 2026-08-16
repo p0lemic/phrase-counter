@@ -8,6 +8,7 @@ const song: SongRecord = {
   title: 'Makina Feria.mp3',
   bpm: 170.4,
   durationMs: 37433,
+  phraseTimesSec: [0, 9.3, 18.6, 27.9],
   blocks: [
     { phraseCount: 4, isBreakdown: false },
     { phraseCount: 6, isBreakdown: true }

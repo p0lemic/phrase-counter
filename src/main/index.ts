@@ -8,10 +8,10 @@ import {
   insertSong,
   listSongs,
   openDatabase,
-  updateSongBlocks,
+  updateSongAnalysis,
   type NewSongRecord
 } from './database'
-import type { SongMetadata } from '../shared/song'
+import type { SongAnalysisUpdate, SongMetadata } from '../shared/song'
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.aiff', '.m4a', '.ogg']
 
@@ -79,8 +79,8 @@ ipcMain.handle('read-song-metadata', async (_event, filePath: string): Promise<S
 ipcMain.handle('db:list-songs', () => listSongs())
 ipcMain.handle('db:find-song-by-path', (_event, filePath: string) => findSongByFilePath(filePath))
 ipcMain.handle('db:insert-song', (_event, song: NewSongRecord) => insertSong(song))
-ipcMain.handle('db:update-song-blocks', (_event, id: number, blocks: NewSongRecord['blocks']) =>
-  updateSongBlocks(id, blocks)
+ipcMain.handle('db:update-song-analysis', (_event, id: number, update: SongAnalysisUpdate) =>
+  updateSongAnalysis(id, update)
 )
 ipcMain.handle('db:delete-song', (_event, id: number) => deleteSong(id))
 

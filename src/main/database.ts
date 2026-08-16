@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import initSqlJs, { type Database } from 'sql.js'
-import type { NewSongRecord, SongRecord } from '../shared/song'
+import type { NewSongRecord, SongAnalysisUpdate, SongRecord } from '../shared/song'
 
 export type { NewSongRecord, SongRecord }
 
@@ -19,12 +19,25 @@ export async function openDatabase(path: string): Promise<void> {
       title TEXT NOT NULL,
       bpm REAL NOT NULL,
       duration_ms INTEGER NOT NULL,
+      phrase_times_sec TEXT NOT NULL DEFAULT '[]',
       blocks TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `)
+  migrate()
   persist()
+}
+
+/** CREATE TABLE IF NOT EXISTS doesn't alter an already-existing table, so new columns need this. */
+function migrate(): void {
+  const columns = requireDb()
+    .exec('PRAGMA table_info(songs)')[0]
+    .values.map((row) => row[1] as string)
+
+  if (!columns.includes('phrase_times_sec')) {
+    requireDb().run("ALTER TABLE songs ADD COLUMN phrase_times_sec TEXT NOT NULL DEFAULT '[]'")
+  }
 }
 
 function persist(): void {
@@ -44,6 +57,7 @@ function rowToSong(row: Record<string, unknown>): SongRecord {
     title: row.title as string,
     bpm: row.bpm as number,
     durationMs: row.duration_ms as number,
+    phraseTimesSec: JSON.parse(row.phrase_times_sec as string),
     blocks: JSON.parse(row.blocks as string),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
@@ -64,9 +78,18 @@ export function findSongByFilePath(filePath: string): SongRecord | undefined {
 export function insertSong(song: NewSongRecord): SongRecord {
   const now = new Date().toISOString()
   requireDb().run(
-    `INSERT INTO songs (file_path, title, bpm, duration_ms, blocks, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [song.filePath, song.title, song.bpm, song.durationMs, JSON.stringify(song.blocks), now, now]
+    `INSERT INTO songs (file_path, title, bpm, duration_ms, phrase_times_sec, blocks, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      song.filePath,
+      song.title,
+      song.bpm,
+      song.durationMs,
+      JSON.stringify(song.phraseTimesSec),
+      JSON.stringify(song.blocks),
+      now,
+      now
+    ]
   )
   persist()
   const created = findSongByFilePath(song.filePath)
@@ -74,9 +97,11 @@ export function insertSong(song: NewSongRecord): SongRecord {
   return created
 }
 
-export function updateSongBlocks(id: number, blocks: SongRecord['blocks']): void {
-  requireDb().run('UPDATE songs SET blocks = ?, updated_at = ? WHERE id = ?', [
-    JSON.stringify(blocks),
+export function updateSongAnalysis(id: number, update: SongAnalysisUpdate): void {
+  requireDb().run('UPDATE songs SET bpm = ?, phrase_times_sec = ?, blocks = ?, updated_at = ? WHERE id = ?', [
+    update.bpm,
+    JSON.stringify(update.phraseTimesSec),
+    JSON.stringify(update.blocks),
     new Date().toISOString(),
     id
   ])
