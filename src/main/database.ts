@@ -49,6 +49,13 @@ function migrate(): void {
     // next time it's opened — saved/edited blocks are untouched, only the timing grid + bpm refresh.
     requireDb().run("UPDATE songs SET phrase_times_sec = '[]'")
   })
+
+  runOnce('invalidate_uncorrected_phrase_grids', () => {
+    // Grids cached before this migration were pure even-beat extrapolation with no re-anchoring to
+    // real kicks, which can compound a slightly-off BPM estimate into real drift over a long track
+    // (confirmed up to ~1s by the end on a real one) — see buildCorrectedBeatGrid in bpmGrid.ts.
+    requireDb().run("UPDATE songs SET phrase_times_sec = '[]'")
+  })
 }
 
 function runOnce(name: string, migration: () => void): void {
