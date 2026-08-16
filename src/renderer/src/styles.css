@@ -103,6 +103,12 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.library__table th:first-child,
+.library__table td:first-child {
+  width: 1%;
+  padding-right: 0;
+}
+
 .library__table td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
@@ -134,6 +140,11 @@ body {
 .library__delete:hover {
   color: var(--accent);
   background: var(--border);
+}
+
+.library__bulk-delete {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .song-view {
