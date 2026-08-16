@@ -31,13 +31,31 @@ export async function openDatabase(path: string): Promise<void> {
 
 /** CREATE TABLE IF NOT EXISTS doesn't alter an already-existing table, so new columns need this. */
 function migrate(): void {
-  const columns = requireDb()
-    .exec('PRAGMA table_info(songs)')[0]
-    .values.map((row) => row[1] as string)
+  requireDb().run('CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY)')
 
-  if (!columns.includes('phrase_times_sec')) {
-    requireDb().run("ALTER TABLE songs ADD COLUMN phrase_times_sec TEXT NOT NULL DEFAULT '[]'")
-  }
+  runOnce('add_phrase_times_sec_column', () => {
+    const columns = requireDb()
+      .exec('PRAGMA table_info(songs)')[0]
+      .values.map((row) => row[1] as string)
+    if (!columns.includes('phrase_times_sec')) {
+      requireDb().run("ALTER TABLE songs ADD COLUMN phrase_times_sec TEXT NOT NULL DEFAULT '[]'")
+    }
+  })
+
+  runOnce('invalidate_drifted_phrase_grids', () => {
+    // Grids cached before this migration were built from essentia's raw per-tick positions, which
+    // drift out of sync with the music (worst through breakdowns, with no kick to lock onto).
+    // Clearing them makes each song rebuild its grid as perfectly even beats (see analyzeSong.ts)
+    // next time it's opened — saved/edited blocks are untouched, only the timing grid + bpm refresh.
+    requireDb().run("UPDATE songs SET phrase_times_sec = '[]'")
+  })
+}
+
+function runOnce(name: string, migration: () => void): void {
+  const alreadyRan = requireDb().exec('SELECT 1 FROM schema_migrations WHERE name = ?', [name]).length > 0
+  if (alreadyRan) return
+  migration()
+  requireDb().run('INSERT INTO schema_migrations (name) VALUES (?)', [name])
 }
 
 function persist(): void {
