@@ -85,4 +85,18 @@ describe('groupPhrasesIntoBlocks', () => {
 
     expect(blocks).toEqual([{ phraseCount: 4 }, { phraseCount: 3 }])
   })
+
+  test('folds a single transitional phrase back into its section instead of its own one-phrase block', () => {
+    // A brief riser/fill on the way into the drop — clearly above the breakdown before it, but not
+    // yet at full kick energy — used to read as a jump both into and back out of it, planting a
+    // spurious lone block; it should end up merged into whichever real section it's closer to.
+    const breakdown = [0.07, 0.07, 0.07, 0.07]
+    const transitionalPhrase = [0.13]
+    const kick = [0.23, 0.23, 0.23, 0.23]
+
+    const blocks = groupPhrasesIntoBlocks([...breakdown, ...transitionalPhrase, ...kick])
+
+    // 0.13 sits closer to the breakdown's 0.07 average than the kick's 0.23, so it's absorbed there.
+    expect(blocks).toEqual([{ phraseCount: 5 }, { phraseCount: 4 }])
+  })
 })

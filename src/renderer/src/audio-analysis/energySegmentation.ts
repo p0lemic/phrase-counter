@@ -48,12 +48,52 @@ export interface EnergyBlock {
 
 const ENERGY_EPSILON = 1e-6
 
+/** A block this short is more likely a transitional phrase between two real sections (a riser, a
+ *  filter sweep easing into the drop) than a section of its own — see mergeShortBlocks. */
+const MIN_BLOCK_PHRASES = 2
+
+function blockAverageEnergies(blocks: EnergyBlock[], energies: number[]): number[] {
+  const averages: number[] = []
+  let phraseIndex = 0
+  for (const block of blocks) {
+    const slice = energies.slice(phraseIndex, phraseIndex + block.phraseCount)
+    averages.push(slice.reduce((sum, value) => sum + value, 0) / slice.length)
+    phraseIndex += block.phraseCount
+  }
+  return averages
+}
+
+/** Merges any block shorter than MIN_BLOCK_PHRASES into whichever adjacent block has the closer
+ *  average energy, repeating until every remaining block meets the minimum. Without this, a single
+ *  transitional phrase reads as a jump both into *and* back out of it, planting a spurious
+ *  one-phrase block right in the middle of what's really one continuous section. */
+function mergeShortBlocks(blocks: EnergyBlock[], energies: number[]): EnergyBlock[] {
+  let result = blocks.map((block) => ({ ...block }))
+
+  while (result.length > 1) {
+    const shortestIndex = result.findIndex((block) => block.phraseCount < MIN_BLOCK_PHRASES)
+    if (shortestIndex === -1) break
+
+    const averages = blockAverageEnergies(result, energies)
+    const leftDistance = shortestIndex > 0 ? Math.abs(averages[shortestIndex] - averages[shortestIndex - 1]) : Infinity
+    const rightDistance =
+      shortestIndex < result.length - 1 ? Math.abs(averages[shortestIndex] - averages[shortestIndex + 1]) : Infinity
+    const mergeAt = leftDistance <= rightDistance ? shortestIndex - 1 : shortestIndex
+
+    const merged = { phraseCount: result[mergeAt].phraseCount + result[mergeAt + 1].phraseCount }
+    result = [...result.slice(0, mergeAt), merged, ...result.slice(mergeAt + 2)]
+  }
+
+  return result
+}
+
 /** Groups consecutive phrases with similar energy; a jump of `jumpRatio`x or more starts a new block.
  *  Real breakdowns often still carry some bass (pads, sub-basslines) even with the kick removed, so
  *  the kick-band contrast between a breakdown and a kick section tends to be a moderate ~1.2-1.5x,
- *  not the much larger jump a fully silent gap would produce — 1.4 missed real transitions like
- *  that on some tracks entirely, collapsing the whole thing into a single block. */
-export function groupPhrasesIntoBlocks(energies: number[], jumpRatio = 1.2): EnergyBlock[] {
+ *  not the much larger jump a fully silent gap would produce — this is deliberately sensitive enough
+ *  to catch that, which means it also catches individual transitional phrases as their own one-phrase
+ *  "block"; mergeShortBlocks folds those back into whichever real section they belong to. */
+export function groupPhrasesIntoBlocks(energies: number[], jumpRatio = 1.15): EnergyBlock[] {
   if (energies.length === 0) return []
 
   const blocks: EnergyBlock[] = [{ phraseCount: 1 }]
@@ -70,5 +110,5 @@ export function groupPhrasesIntoBlocks(energies: number[], jumpRatio = 1.2): Ene
     }
   }
 
-  return blocks
+  return mergeShortBlocks(blocks, energies)
 }
