@@ -120,7 +120,10 @@ export default function SongAnalysisView({
       let monoSamples: Float32Array
 
       if (existingSong && existingSong.phraseTimesSec.length > 0) {
-        const decoded = await decodeAudioBuffer(arrayBuffer)
+        // decodeAudioData detaches/neuters whatever ArrayBuffer it's given (per spec, to avoid a
+        // copy) — decode a throwaway slice() so the original arrayBuffer stays intact below, where
+        // it becomes the Blob wavesurfer plays from.
+        const decoded = await decodeAudioBuffer(arrayBuffer.slice(0))
         if (cancelled) return
         monoSamples = decoded.monoSamples
         sampleRateRef.current = decoded.sampleRate
@@ -130,7 +133,7 @@ export default function SongAnalysisView({
         blocks = existingSong.blocks
         songIdRef.current = existingSong.id
       } else {
-        const analysis = await analyzeSong(arrayBuffer)
+        const analysis = await analyzeSong(arrayBuffer.slice(0))
         if (cancelled) return
         monoSamples = analysis.monoSamples
         sampleRateRef.current = analysis.sampleRate
