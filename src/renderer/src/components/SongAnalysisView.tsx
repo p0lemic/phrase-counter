@@ -72,6 +72,7 @@ export default function SongAnalysisView({
   /** The BPM shown next to the stepper/tap controls — only applied to the grid on "Recalcular rejilla". */
   const [pendingBpm, setPendingBpm] = useState<number | null>(null)
   const [copyFeedback, setCopyFeedback] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isPlaying, setIsPlaying] = useState(false)
   const [tapTimestampsMs, setTapTimestampsMs] = useState<number[]>([])
   /** True while "Reset" is re-running full automatic detection. */
@@ -88,6 +89,7 @@ export default function SongAnalysisView({
     setTapTimestampsMs([])
     setIsPlaying(false)
     setIsResetting(false)
+    setSaveFeedback('idle')
 
     // Cover/title/artist/key/rating are a nice-to-have read from the file's own tags — fetched
     // independently of the analysis pipeline so a slow/missing tag never blocks it.
@@ -358,6 +360,20 @@ export default function SongAnalysisView({
     setTimeout(() => setCopyFeedback(false), 1500)
   }
 
+  /** Writes the result into the mp3's ID3 comment tag, so it shows up in Engine DJ and similar
+   *  software. Merges into the file's existing tags rather than replacing them. */
+  async function saveToFile(): Promise<void> {
+    if (!result) return
+    setSaveFeedback('saving')
+    try {
+      const success = await window.api.writeSongComment(song.filePath, formatBlocks(result.blocks))
+      setSaveFeedback(success ? 'saved' : 'error')
+    } catch {
+      setSaveFeedback('error')
+    }
+    setTimeout(() => setSaveFeedback('idle'), 2000)
+  }
+
   const tapBpm = computeTapBpm(tapTimestampsMs)
 
   return (
@@ -394,7 +410,20 @@ export default function SongAnalysisView({
           <span className="song-view__result">{formatBlocks(result.blocks)}</span>{' '}
           <button className="copy-button" onClick={copyResult}>
             {copyFeedback ? 'Copiado ✓' : 'Copiar'}
-          </button>
+          </button>{' '}
+          {song.filePath.toLowerCase().endsWith('.mp3') && (
+            <button
+              className="copy-button"
+              onClick={saveToFile}
+              disabled={saveFeedback === 'saving'}
+              title="Escribe el resultado en el comentario (ID3) del mp3 — visible en Engine DJ y software similar"
+            >
+              {saveFeedback === 'saved' && 'Guardado ✓'}
+              {saveFeedback === 'error' && 'Error al guardar'}
+              {saveFeedback === 'saving' && 'Guardando…'}
+              {saveFeedback === 'idle' && 'Guardar en MP3'}
+            </button>
+          )}
         </p>
       )}
 

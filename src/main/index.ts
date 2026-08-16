@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
+import NodeID3 from 'node-id3'
 import {
   deleteSong,
   findSongByFilePath,
@@ -73,6 +74,22 @@ ipcMain.handle('read-song-metadata', async (_event, filePath: string): Promise<S
   } catch {
     // Missing/corrupt tags shouldn't block opening the song — just show nothing extra.
     return EMPTY_METADATA
+  }
+})
+
+ipcMain.handle('write-song-comment', async (_event, filePath: string, comment: string): Promise<boolean> => {
+  // ID3 (and this library) is an MP3 tag format — other formats we support (wav/flac/aiff/m4a/ogg)
+  // use different tagging systems we don't write to.
+  if (!filePath.toLowerCase().endsWith('.mp3')) return false
+  try {
+    // update() merges into the file's existing tags (title, cover art, rating, ...) instead of
+    // replacing them, so this can never wipe out metadata the user or another app already wrote.
+    // Despite its .d.ts claiming Promise<boolean>, it actually resolves with undefined on success
+    // (confirmed empirically) — not throwing is what signals success, not the resolved value.
+    await NodeID3.Promise.update({ comment: { language: 'eng', text: comment } }, filePath)
+    return true
+  } catch {
+    return false
   }
 })
 

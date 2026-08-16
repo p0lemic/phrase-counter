@@ -5,6 +5,8 @@ import type { NewSongRecord, SongAnalysisUpdate, SongMetadata, SongRecord } from
 const api = {
   readAudioFile: (filePath: string): Promise<ArrayBuffer> => ipcRenderer.invoke('read-audio-file', filePath),
   readSongMetadata: (filePath: string): Promise<SongMetadata> => ipcRenderer.invoke('read-song-metadata', filePath),
+  writeSongComment: (filePath: string, comment: string): Promise<boolean> =>
+    ipcRenderer.invoke('write-song-comment', filePath, comment),
   db: {
     listSongs: (): Promise<SongRecord[]> => ipcRenderer.invoke('db:list-songs'),
     findSongByPath: (filePath: string): Promise<SongRecord | undefined> =>

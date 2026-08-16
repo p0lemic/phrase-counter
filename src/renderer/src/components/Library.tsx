@@ -34,6 +34,7 @@ function sortSongs(songs: SongRecord[], sort: Sort): SongRecord[] {
 export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongRequest) => void }): React.JSX.Element {
   const [songs, setSongs] = useState<SongRecord[]>([])
   const [addProgress, setAddProgress] = useState<{ current: number; total: number } | null>(null)
+  const [writeProgress, setWriteProgress] = useState<{ current: number; total: number } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [sort, setSort] = useState<Sort>({ key: 'title', direction: 'asc' })
   const [searchQuery, setSearchQuery] = useState('')
@@ -154,6 +155,27 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     await refresh()
   }
 
+  /** Writes each selected song's formatted result into its mp3's ID3 comment tag (see
+   *  SongAnalysisView's "Guardar en MP3"), so it shows up in Engine DJ and similar software. */
+  async function handleBulkWriteComments(): Promise<void> {
+    if (selectedIds.size === 0) return
+    const targets = songs.filter((song) => selectedIds.has(song.id))
+    const confirmed = window.confirm(
+      `Se va a escribir el resultado en el comentario (ID3) de ${targets.length} archivo(s) mp3. Esto modifica los archivos en el disco (el resto de sus etiquetas, como carátula o rating, no se toca).`
+    )
+    if (!confirmed) return
+
+    for (let i = 0; i < targets.length; i++) {
+      setWriteProgress({ current: i + 1, total: targets.length })
+      try {
+        await window.api.writeSongComment(targets[i].filePath, formatBlocks(targets[i].blocks))
+      } catch {
+        // Skip files that fail to write (not an mp3, locked, read-only, etc.) and keep going.
+      }
+    }
+    setWriteProgress(null)
+  }
+
   async function handleExportCsv(): Promise<void> {
     await window.api.exportLibrary(songsToCsv(songs), 'drop-count.csv')
   }
@@ -193,13 +215,27 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
           </>
         )}
         {selectedIds.size > 0 && (
-          <button className="library__bulk-delete" onClick={handleBulkDelete}>
-            Borrar seleccionadas ({selectedIds.size})
-          </button>
+          <>
+            <button
+              onClick={handleBulkWriteComments}
+              disabled={writeProgress !== null}
+              title="Escribe el resultado en el comentario (ID3) de cada mp3 — visible en Engine DJ y software similar"
+            >
+              Escribir en MP3 ({selectedIds.size})
+            </button>
+            <button className="library__bulk-delete" onClick={handleBulkDelete}>
+              Borrar seleccionadas ({selectedIds.size})
+            </button>
+          </>
         )}
         {addProgress && (
           <span className="library__progress">
             Analizando {addProgress.current}/{addProgress.total}…
+          </span>
+        )}
+        {writeProgress && (
+          <span className="library__progress">
+            Escribiendo {writeProgress.current}/{writeProgress.total}…
           </span>
         )}
       </div>
