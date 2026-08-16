@@ -31,12 +31,28 @@ function sortSongs(songs: SongRecord[], sort: Sort): SongRecord[] {
   })
 }
 
+type ColumnKey = 'title' | 'bpm' | 'result' | 'duration'
+const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = { title: 380, bpm: 70, result: 200, duration: 90 }
+const MIN_COLUMN_WIDTH = 50
+const COLUMN_WIDTHS_STORAGE_KEY = 'drop-count:library-column-widths'
+
+function loadColumnWidths(): Record<ColumnKey, number> {
+  try {
+    const saved = localStorage.getItem(COLUMN_WIDTHS_STORAGE_KEY)
+    if (saved) return { ...DEFAULT_COLUMN_WIDTHS, ...JSON.parse(saved) }
+  } catch {
+    // Corrupt/unavailable storage — fall back to the defaults below.
+  }
+  return DEFAULT_COLUMN_WIDTHS
+}
+
 export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongRequest) => void }): React.JSX.Element {
   const [songs, setSongs] = useState<SongRecord[]>([])
   const [addProgress, setAddProgress] = useState<{ current: number; total: number } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [sort, setSort] = useState<Sort>({ key: 'title', direction: 'asc' })
   const [searchQuery, setSearchQuery] = useState('')
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>(loadColumnWidths)
 
   async function refresh(): Promise<void> {
     const fresh = await window.api.db.listSongs()
@@ -48,6 +64,43 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
   useEffect(() => {
     refresh()
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem(COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(columnWidths))
+  }, [columnWidths])
+
+  /** Drags a column's right edge to resize it — listeners are scoped to this one drag, so there's
+   *  no stale-closure risk across renders. */
+  function startResize(key: ColumnKey, event: React.MouseEvent): void {
+    event.preventDefault()
+    event.stopPropagation()
+    const startX = event.clientX
+    const startWidth = columnWidths[key]
+    let moved = false
+
+    function onMouseMove(moveEvent: MouseEvent): void {
+      if (Math.abs(moveEvent.clientX - startX) > 2) moved = true
+      const nextWidth = Math.max(MIN_COLUMN_WIDTH, startWidth + (moveEvent.clientX - startX))
+      setColumnWidths((previous) => ({ ...previous, [key]: nextWidth }))
+    }
+
+    // If the mouse ends up over a different column than it started on, the browser still fires a
+    // synthetic click on their common ancestor — which can be the header itself, toggling sort
+    // right after a resize. Swallow exactly that one click when a drag actually happened.
+    function suppressNextClick(clickEvent: MouseEvent): void {
+      clickEvent.stopPropagation()
+      clickEvent.preventDefault()
+    }
+
+    function onMouseUp(): void {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      if (moved) window.addEventListener('click', suppressNextClick, { capture: true, once: true })
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
 
   /** Re-analyzes every path: inserts new files, and (only when `overwriteExisting`) refreshes
    *  already-known ones — used both by "+ Carpeta"/"+ Archivos" (skip known files) and
@@ -211,61 +264,75 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
       ) : visibleSongs.length === 0 ? (
         <p className="library__empty">Ninguna canción coincide con "{searchQuery}".</p>
       ) : (
-        <table className="library__table">
-          <colgroup>
-            <col style={{ width: '32px' }} />
-            <col style={{ width: '40px' }} />
-            <col style={{ width: '40%' }} />
-            <col style={{ width: '70px' }} />
-            <col style={{ width: '25%' }} />
-            <col style={{ width: '90px' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  checked={visibleSongs.length > 0 && visibleSongs.every((song) => selectedIds.has(song.id))}
-                  onChange={toggleSelectAll}
-                  title="Seleccionar todas"
-                />
-              </th>
-              <th className="library__index">#</th>
-              <th className="library__sortable" onClick={() => toggleSort('title')}>
-                Título{sortIndicator('title')}
-              </th>
-              <th className="library__sortable library__index" onClick={() => toggleSort('bpm')}>
-                BPM{sortIndicator('bpm')}
-              </th>
-              <th>Resultado</th>
-              <th className="library__sortable library__index" onClick={() => toggleSort('durationMs')}>
-                Duración{sortIndicator('durationMs')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleSongs.map((song, i) => (
-              <tr
-                key={song.id}
-                onClick={() => onOpenSong({ filePath: song.filePath, fileName: song.title })}
-              >
-                <td>
+        <div className="library__table-wrap">
+          <table className="library__table">
+            <colgroup>
+              <col style={{ width: '32px' }} />
+              <col style={{ width: '40px' }} />
+              <col style={{ width: `${columnWidths.title}px` }} />
+              <col style={{ width: `${columnWidths.bpm}px` }} />
+              <col style={{ width: `${columnWidths.result}px` }} />
+              <col style={{ width: `${columnWidths.duration}px` }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>
                   <input
                     type="checkbox"
-                    checked={selectedIds.has(song.id)}
-                    onChange={() => toggleSelected(song.id)}
-                    onClick={(e) => e.stopPropagation()}
+                    checked={visibleSongs.length > 0 && visibleSongs.every((song) => selectedIds.has(song.id))}
+                    onChange={toggleSelectAll}
+                    title="Seleccionar todas"
                   />
-                </td>
-                <td className="library__index">{i + 1}</td>
-                <td className="library__title">{song.title}</td>
-                <td className="library__index">{Math.round(song.bpm)}</td>
-                <td className="library__result">{formatBlocks(song.blocks)}</td>
-                <td className="library__index">{formatDuration(song.durationMs)}</td>
+                </th>
+                <th className="library__index">#</th>
+                <th className="library__sortable library__resizable" onClick={() => toggleSort('title')}>
+                  Título{sortIndicator('title')}
+                  <span className="library__resize-handle" onMouseDown={(e) => startResize('title', e)} onClick={(e) => e.stopPropagation()} />
+                </th>
+                <th
+                  className="library__sortable library__index library__resizable"
+                  onClick={() => toggleSort('bpm')}
+                >
+                  BPM{sortIndicator('bpm')}
+                  <span className="library__resize-handle" onMouseDown={(e) => startResize('bpm', e)} onClick={(e) => e.stopPropagation()} />
+                </th>
+                <th className="library__resizable">
+                  Resultado
+                  <span className="library__resize-handle" onMouseDown={(e) => startResize('result', e)} onClick={(e) => e.stopPropagation()} />
+                </th>
+                <th
+                  className="library__sortable library__index library__resizable"
+                  onClick={() => toggleSort('durationMs')}
+                >
+                  Duración{sortIndicator('durationMs')}
+                  <span className="library__resize-handle" onMouseDown={(e) => startResize('duration', e)} onClick={(e) => e.stopPropagation()} />
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {visibleSongs.map((song, i) => (
+                <tr
+                  key={song.id}
+                  onClick={() => onOpenSong({ filePath: song.filePath, fileName: song.title })}
+                >
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(song.id)}
+                      onChange={() => toggleSelected(song.id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td className="library__index">{i + 1}</td>
+                  <td className="library__title">{song.title}</td>
+                  <td className="library__index">{Math.round(song.bpm)}</td>
+                  <td className="library__result">{formatBlocks(song.blocks)}</td>
+                  <td className="library__index">{formatDuration(song.durationMs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

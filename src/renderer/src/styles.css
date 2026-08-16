@@ -117,8 +117,12 @@ body {
   color: var(--text-dim);
 }
 
+.library__table-wrap {
+  overflow-x: auto;
+}
+
 .library__table {
-  width: 100%;
+  min-width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 14px;
@@ -142,6 +146,26 @@ body {
 
 .library__sortable:hover {
   color: var(--text);
+}
+
+.library__resizable {
+  position: relative;
+  padding-right: 16px;
+}
+
+.library__resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.library__resize-handle:hover,
+.library__resize-handle:active {
+  background: var(--accent);
+  opacity: 0.5;
 }
 
 .library__table td {
@@ -172,6 +196,10 @@ body {
   font-variant-numeric: tabular-nums;
   padding-left: 4px;
   padding-right: 12px;
+}
+
+.library__index.library__resizable {
+  padding-right: 20px;
 }
 
 .library__result {
