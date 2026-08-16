@@ -109,12 +109,6 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     await processPaths(paths, true)
   }
 
-  async function handleDelete(id: number, event: React.MouseEvent): Promise<void> {
-    event.stopPropagation()
-    await window.api.db.deleteSong(id)
-    await refresh()
-  }
-
   function toggleSelected(id: number): void {
     setSelectedIds((previous) => {
       const next = new Set(previous)
@@ -213,7 +207,6 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
               <th className="library__sortable" onClick={() => toggleSort('durationMs')}>
                 Duración{sortIndicator('durationMs')}
               </th>
-              <th />
             </tr>
           </thead>
           <tbody>
@@ -234,11 +227,6 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
                 <td>{Math.round(song.bpm)}</td>
                 <td className="library__result">{formatBlocks(song.blocks)}</td>
                 <td>{formatDuration(song.durationMs)}</td>
-                <td>
-                  <button className="library__delete" onClick={(e) => handleDelete(song.id, e)} title="Borrar de la librería">
-                    ✕
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>

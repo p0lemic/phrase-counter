@@ -136,21 +136,6 @@ body {
   color: var(--text-dim);
 }
 
-.library__delete {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 13px;
-  padding: 4px 8px;
-  border-radius: 4px;
-}
-
-.library__delete:hover {
-  color: var(--accent);
-  background: var(--border);
-}
-
 .library__bulk-delete {
   color: var(--accent);
   border-color: var(--accent);
