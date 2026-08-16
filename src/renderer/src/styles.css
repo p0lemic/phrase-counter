@@ -109,6 +109,15 @@ body {
   padding-right: 0;
 }
 
+.library__sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.library__sortable:hover {
+  color: var(--text);
+}
+
 .library__table td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);

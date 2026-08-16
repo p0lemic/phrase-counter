@@ -20,10 +20,23 @@ function formatDuration(durationMs: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+type SortKey = 'title' | 'bpm' | 'durationMs'
+type Sort = { key: SortKey; direction: 'asc' | 'desc' }
+
+function sortSongs(songs: SongRecord[], sort: Sort | null): SongRecord[] {
+  if (!sort) return songs
+  const factor = sort.direction === 'asc' ? 1 : -1
+  return [...songs].sort((a, b) => {
+    if (sort.key === 'title') return a.title.localeCompare(b.title) * factor
+    return (a[sort.key] - b[sort.key]) * factor
+  })
+}
+
 export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongRequest) => void }): React.JSX.Element {
   const [songs, setSongs] = useState<SongRecord[]>([])
   const [addProgress, setAddProgress] = useState<{ current: number; total: number } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [sort, setSort] = useState<Sort | null>(null)
 
   async function refresh(): Promise<void> {
     const fresh = await window.api.db.listSongs()
@@ -111,6 +124,20 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     })
   }
 
+  /** Cycles a column through ascending → descending → back to the default (insertion) order. */
+  function toggleSort(key: SortKey): void {
+    setSort((previous) => {
+      if (!previous || previous.key !== key) return { key, direction: 'asc' }
+      if (previous.direction === 'asc') return { key, direction: 'desc' }
+      return null
+    })
+  }
+
+  function sortIndicator(key: SortKey): string {
+    if (sort?.key !== key) return ''
+    return sort.direction === 'asc' ? ' ▲' : ' ▼'
+  }
+
   function toggleSelectAll(): void {
     setSelectedIds((previous) => (previous.size === songs.length ? new Set() : new Set(songs.map((song) => song.id))))
   }
@@ -176,15 +203,21 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
                   title="Seleccionar todas"
                 />
               </th>
-              <th>Título</th>
-              <th>BPM</th>
+              <th className="library__sortable" onClick={() => toggleSort('title')}>
+                Título{sortIndicator('title')}
+              </th>
+              <th className="library__sortable" onClick={() => toggleSort('bpm')}>
+                BPM{sortIndicator('bpm')}
+              </th>
               <th>Resultado</th>
-              <th>Duración</th>
+              <th className="library__sortable" onClick={() => toggleSort('durationMs')}>
+                Duración{sortIndicator('durationMs')}
+              </th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {songs.map((song) => (
+            {sortSongs(songs, sort).map((song) => (
               <tr
                 key={song.id}
                 onClick={() => onOpenSong({ filePath: song.filePath, fileName: song.title })}
