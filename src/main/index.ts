@@ -82,11 +82,16 @@ ipcMain.handle('write-song-comment', async (_event, filePath: string, comment: s
   // use different tagging systems we don't write to.
   if (!filePath.toLowerCase().endsWith('.mp3')) return false
   try {
-    // update() merges into the file's existing tags (title, cover art, rating, ...) instead of
-    // replacing them, so this can never wipe out metadata the user or another app already wrote.
-    // Despite its .d.ts claiming Promise<boolean>, it actually resolves with undefined on success
-    // (confirmed empirically) — not throwing is what signals success, not the resolved value.
-    await NodeID3.Promise.update({ comment: { language: 'eng', text: comment } }, filePath)
+    // Read the existing tags and explicitly overwrite just the comment key ourselves, then write
+    // the whole set back — rather than relying on update()'s own frame-matching to find and
+    // replace the prior comment, which only actually replaces it when its language/description
+    // happen to match what we write. Doing the merge here in plain JS guarantees the old comment
+    // is gone and only ours remains, no matter what wrote it or how it was tagged, while every
+    // other existing tag (title, cover art, rating, ...) passes through untouched.
+    const existingTags = await NodeID3.Promise.read(filePath)
+    // Despite its .d.ts claiming Promise<boolean>, write() actually resolves with undefined on
+    // success (confirmed empirically) — not throwing is what signals success, not the resolved value.
+    await NodeID3.Promise.write({ ...existingTags, comment: { language: 'eng', text: comment } }, filePath)
     return true
   } catch {
     return false
