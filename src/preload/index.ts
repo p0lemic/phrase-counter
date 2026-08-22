@@ -1,12 +1,23 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { NewSongRecord, SongAnalysisUpdate, SongMetadata, SongRecord } from '../shared/song'
+import type { Collection, CollectionMember } from '../shared/collection'
+import type { EngineLibrary } from '../shared/engine'
+import type {
+  NewSongRecord,
+  SongAnalysisUpdate,
+  SongMetadata,
+  SongRecord,
+  SongTagsUpdate
+} from '../shared/song'
 
 const api = {
   readAudioFile: (filePath: string): Promise<ArrayBuffer> => ipcRenderer.invoke('read-audio-file', filePath),
   readSongMetadata: (filePath: string): Promise<SongMetadata> => ipcRenderer.invoke('read-song-metadata', filePath),
   writeSongComment: (filePath: string, comment: string): Promise<boolean> =>
     ipcRenderer.invoke('write-song-comment', filePath, comment),
+  /** Resolves false when the file's format has no writable tags (anything but mp3). */
+  writeSongTags: (filePath: string, tags: SongTagsUpdate): Promise<boolean> =>
+    ipcRenderer.invoke('write-song-tags', filePath, tags),
   db: {
     listSongs: (): Promise<SongRecord[]> => ipcRenderer.invoke('db:list-songs'),
     findSongByPath: (filePath: string): Promise<SongRecord | undefined> =>
@@ -14,7 +25,27 @@ const api = {
     insertSong: (song: NewSongRecord): Promise<SongRecord> => ipcRenderer.invoke('db:insert-song', song),
     updateSongAnalysis: (id: number, update: SongAnalysisUpdate): Promise<void> =>
       ipcRenderer.invoke('db:update-song-analysis', id, update),
-    deleteSong: (id: number): Promise<void> => ipcRenderer.invoke('db:delete-song', id)
+    updateSongTags: (id: number, update: SongTagsUpdate): Promise<void> =>
+      ipcRenderer.invoke('db:update-song-tags', id, update),
+    updateSongTagsBulk: (updates: ({ id: number } & SongTagsUpdate)[]): Promise<void> =>
+      ipcRenderer.invoke('db:update-song-tags-bulk', updates),
+    deleteSong: (id: number): Promise<void> => ipcRenderer.invoke('db:delete-song', id),
+    listCollections: (): Promise<Collection[]> => ipcRenderer.invoke('db:list-collections'),
+    createCollection: (name: string): Promise<Collection> => ipcRenderer.invoke('db:create-collection', name),
+    renameCollection: (id: number, name: string): Promise<void> =>
+      ipcRenderer.invoke('db:rename-collection', id, name),
+    deleteCollection: (id: number): Promise<void> => ipcRenderer.invoke('db:delete-collection', id),
+    listCollectionMembers: (): Promise<CollectionMember[]> => ipcRenderer.invoke('db:list-collection-members'),
+    addSongsToCollection: (collectionId: number, songIds: number[]): Promise<void> =>
+      ipcRenderer.invoke('db:add-songs-to-collection', collectionId, songIds),
+    removeSongsFromCollection: (collectionId: number, songIds: number[]): Promise<void> =>
+      ipcRenderer.invoke('db:remove-songs-from-collection', collectionId, songIds)
+  },
+  engine: {
+    /** Reads Engine DJ's library (read-only). Defaults to ~/Music/Engine Library. */
+    readLibrary: (libraryDir?: string): Promise<EngineLibrary> =>
+      ipcRenderer.invoke('engine:read-library', libraryDir),
+    pickLibraryDir: (): Promise<string | null> => ipcRenderer.invoke('dialog:pick-engine-library')
   },
   openAudioFilesDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-files'),
   openAudioFolderDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-folder'),

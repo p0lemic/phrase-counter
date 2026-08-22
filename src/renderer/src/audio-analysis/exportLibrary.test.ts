@@ -5,7 +5,9 @@ import type { SongRecord } from '../../../shared/song'
 const song: SongRecord = {
   id: 1,
   filePath: '/Users/javier/Music/Makina Feria.mp3',
-  title: 'Makina Feria.mp3',
+  title: 'Makina Feria',
+  artist: 'DJ Skudero',
+  tagsRead: true,
   bpm: 170.4,
   durationMs: 37433,
   phraseTimesSec: [0, 9.3, 18.6, 27.9],
@@ -22,8 +24,8 @@ describe('songsToCsv', () => {
     const csv = songsToCsv([song])
     const lines = csv.trim().split('\n')
 
-    expect(lines[0]).toBe('title,bpm,result,duration_sec,file_path')
-    expect(lines[1]).toBe('Makina Feria.mp3,170,4+(6),37,/Users/javier/Music/Makina Feria.mp3')
+    expect(lines[0]).toBe('artist,title,bpm,result,duration_sec,file_path')
+    expect(lines[1]).toBe('DJ Skudero,Makina Feria,170,4+(6),37,/Users/javier/Music/Makina Feria.mp3')
   })
 
   test('quotes fields that contain a comma', () => {
@@ -34,7 +36,7 @@ describe('songsToCsv', () => {
   })
 
   test('returns just the header for an empty library', () => {
-    expect(songsToCsv([]).trim()).toBe('title,bpm,result,duration_sec,file_path')
+    expect(songsToCsv([]).trim()).toBe('artist,title,bpm,result,duration_sec,file_path')
   })
 })
 
@@ -45,7 +47,8 @@ describe('songsToJson', () => {
 
     expect(parsed).toEqual([
       {
-        title: 'Makina Feria.mp3',
+        artist: 'DJ Skudero',
+        title: 'Makina Feria',
         bpm: 170.4,
         result: '4+(6)',
         durationSec: 37.433,

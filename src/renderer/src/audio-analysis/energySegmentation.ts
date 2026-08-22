@@ -3,8 +3,8 @@ import { bandpassFilter } from './filters'
 /** A breakdown can be just as loud overall as a kick section (pads, vocals, hihats) — it's
  *  specifically missing the kick, so the kick-drum frequency range is what actually tells them
  *  apart reliably. */
-const KICK_BAND_LOW_HZ = 40
-const KICK_BAND_HIGH_HZ = 150
+export const KICK_BAND_LOW_HZ = 40
+export const KICK_BAND_HIGH_HZ = 150
 
 export function computePhraseEnergies(
   monoSamples: Float32Array,

@@ -26,10 +26,23 @@ body {
   padding: 24px;
 }
 
+.app__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
 .app__header h1 {
-  font-size: 20px;
-  letter-spacing: 0.02em;
-  margin: 0 0 24px;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.app-logo {
+  display: block;
+  flex-shrink: 0;
 }
 
 .library-dropzone {
@@ -48,6 +61,13 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+/** Widening a column past the window scrolls the table instead of pushing the app off-screen. */
+.library__table-scroll {
+  flex: 1;
+  overflow-x: auto;
 }
 
 .library__toolbar {
@@ -71,9 +91,13 @@ body {
   border-color: var(--accent);
 }
 
-.library__progress {
-  color: var(--text-dim);
-  font-size: 13px;
+.icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
 }
 
 .library__search {
@@ -179,9 +203,208 @@ body {
   color: var(--text-dim);
 }
 
-.library__bulk-delete {
-  color: var(--accent);
+/** Pushes everything after it to the right edge of a toolbar row. */
+.library__toolbar-gap {
+  flex: 1;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+}
+
+.dropdown__button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.dropdown__button:disabled:hover {
+  border-color: var(--border);
+}
+
+.dropdown__chevron {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dropdown__button--open,
+.dropdown__button--open:hover {
   border-color: var(--accent);
+}
+
+.dropdown__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  min-width: 168px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.dropdown__menu .dropdown__item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dropdown__menu .dropdown__item:hover {
+  background: var(--border);
+  border-color: transparent;
+}
+
+.dropdown__separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
+}
+
+/** Only on screen while songs are checked, so its actions never crowd the main toolbar. */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(255, 93, 115, 0.08);
+}
+
+.selection-bar__count {
+  font-size: 13px;
+}
+
+.selection-bar button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 12px;
+}
+
+.selection-bar button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.selection-bar button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.selection-bar__delete {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.selection-bar__clear {
+  display: inline-flex;
+  border-color: transparent;
+  color: var(--text-dim);
+  padding: 6px 8px;
+}
+
+.progress-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 8;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.progress-toast__header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.progress-toast__label {
+  flex: 1;
+  font-size: 13px;
+}
+
+.progress-toast__count {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-toast__track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-toast__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.progress-toast__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.progress-toast__file {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-toast__footer button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.progress-toast__footer button:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .song-view {
@@ -252,10 +475,6 @@ body {
   color: var(--accent);
 }
 
-.song-summary__stars {
-  color: var(--accent);
-  letter-spacing: 1px;
-}
 
 .song-view__status {
   color: var(--text-dim);
@@ -396,6 +615,25 @@ body {
   text-align: center;
 }
 
+.grid-nudge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.grid-nudge__value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 7ch;
+  text-align: center;
+}
+
+.manual-override__hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  opacity: 0.8;
+}
+
 .tap-tempo__button {
   min-width: 56px;
 }
@@ -422,4 +660,468 @@ body {
 .manual-override button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.library-layout {
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  min-width: 0;
+}
+
+.collections {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Stays in view while the song list scrolls, so a long drag always has a target on screen.
+     align-self is what makes it work: as a flex item it would otherwise stretch to the full
+     height of the layout, leaving sticky nothing to travel within. */
+  position: sticky;
+  top: 24px;
+  align-self: flex-start;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.collections__heading {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 16px 0 4px 10px;
+}
+
+.collections__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.collections__item:hover {
+  background: var(--surface);
+}
+
+.collections__item--active {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+/* Highlighted while songs are being dragged over this collection. */
+.collections__item--drop {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.collections__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collections__count {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.collections__delete {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  visibility: hidden;
+}
+
+.collections__item:hover .collections__delete {
+  visibility: visible;
+}
+
+.collections__delete:hover {
+  color: var(--accent);
+}
+
+.collections__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.collections__empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 10px 8px;
+}
+
+.collections__rename {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.collections__rename:focus {
+  outline: none;
+}
+
+.collections__new {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.collections__new:hover,
+.collections__new--drop {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.collections__rename--new {
+  margin-top: 8px;
+}
+
+.collections__import {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  margin-top: 16px;
+  padding: 8px 10px;
+}
+
+.collections__import:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 40px;
+}
+
+.modal__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__header h2 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.modal__close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.modal__close:hover {
+  color: var(--accent);
+}
+
+.modal__toolbar,
+.modal__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+}
+
+.modal__toolbar {
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__footer {
+  border-top: 1px solid var(--border);
+}
+
+.modal__footer .library__count {
+  flex: 1;
+}
+
+.modal__toolbar button,
+.modal__footer button,
+.modal__body button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 14px;
+}
+
+.modal__toolbar button:hover,
+.modal__footer button:hover:not(:disabled),
+.modal__body button:hover {
+  border-color: var(--accent);
+}
+
+.modal__primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.modal__primary:disabled {
+  border-color: var(--border);
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.modal__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 20px;
+}
+
+.engine-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.engine-list__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 7px 8px;
+}
+
+.engine-list__row:hover {
+  background: var(--surface);
+}
+
+.engine-list__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.engine-list__count {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.engine-list__more {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 12px 8px 0;
+}
+
+.editable-cell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: -4px;
+}
+
+.editable-cell:hover {
+  background: var(--border);
+}
+
+.editable-cell__placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.editable-cell__input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 1px 4px;
+  margin-left: -4px;
+}
+
+.editable-cell__input:focus {
+  outline: none;
+}
+
+/** Marks a row whose edit reached the library but not the file's own tags. */
+.library__library-only {
+  color: var(--accent);
+  margin-left: 6px;
+}
+
+/** The library stays mounted behind the song view, so its hidden state has to beat display:flex. */
+.library-dropzone[hidden] {
+  display: none;
+}
+
+.library__search-clear {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.library__search-clear:hover {
+  color: var(--text);
+}
+
+.library__row-remove-cell {
+  padding-left: 0;
+  padding-right: 8px;
+  text-align: center;
+}
+
+/** Only offered on the row under the pointer, so a table of hundreds isn't a wall of ✕. */
+.library__row-remove {
+  display: inline-flex;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  visibility: hidden;
+}
+
+.library__table tbody tr:hover .library__row-remove {
+  visibility: visible;
+}
+
+.library__row-remove:hover {
+  background: var(--border);
+  color: var(--accent);
+}
+
+/** Marks the row that just moved because its title or artist was edited, so the eye can follow it. */
+.library__table tbody tr.library__row--focused,
+.library__table tbody tr.library__row--focused:hover {
+  background: rgba(255, 93, 115, 0.12);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.library__table th {
+  position: relative;
+}
+
+/** Grab strip on the right edge of a header cell, straddling the border. */
+.library__resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+}
+
+.library__resize::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+}
+
+.library__resize:hover::after,
+.library__resize--active::after {
+  background: var(--accent);
+}
+
+/** While a drag is in flight the pointer is outside the handle half the time. */
+body.is-resizing-column {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.engine-list__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.progress-toast__eta {
+  color: var(--text-dim);
+}
+
+/** How many of the targeted songs are still missing a grid. */
+.library__pending-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }

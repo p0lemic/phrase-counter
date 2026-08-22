@@ -14,6 +14,22 @@ export function buildBeatGridFromBpm(bpm: number, firstKickSec: number, duration
   return { bpm, kickIntervalSec, kickTimesSec }
 }
 
+/** Beat times for a fitted tempo, laid across the track. The grid starts at the fitted beat
+ *  nearest where beat tracking first locked on, so a phase correction doesn't renumber the
+ *  phrases — it only moves them onto the kicks. */
+export function beatTimesFromFit(
+  fit: { intervalSec: number; phaseSec: number },
+  firstTickSec: number,
+  durationSec: number
+): number[] {
+  const { intervalSec, phaseSec } = fit
+  const start = phaseSec + Math.round((firstTickSec - phaseSec) / intervalSec) * intervalSec
+
+  const beats: number[] = []
+  for (let time = Math.max(start, 0); time <= durationSec; time += intervalSec) beats.push(time)
+  return beats
+}
+
 /** How close (as a fraction of one beat interval) a real detected kick must be to the expected
  *  position to be trusted as a correction — tight enough to reject the noisy ticks essentia
  *  produces through a breakdown (no kick to lock onto), loose enough to still catch real tempo

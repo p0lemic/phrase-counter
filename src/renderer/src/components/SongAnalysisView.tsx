@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin, { type Region } from 'wavesurfer.js/plugins/regions'
-import { analyzeSong } from '../audio-analysis/analyzeSong'
+import { getAnalysisPool } from '../audio-analysis/analysisPool'
 import { decodeAudioBuffer } from '../audio-analysis/decode'
 import { buildBeatGridFromBpm, phraseBoundariesSec } from '../audio-analysis/bpmGrid'
 import { computeKickBandPhraseEnergies, groupPhrasesIntoBlocks } from '../audio-analysis/energySegmentation'
 import { markBreakdowns } from '../audio-analysis/breakdownDetection'
+import { resolveSongTags } from '../tags/resolveSongTags'
 import { formatBlocks, type Block } from '../audio-analysis/formatBlocks'
 import {
   blockBoundaryTimesSec,
@@ -15,6 +16,7 @@ import {
   toggleBreakdown
 } from '../audio-analysis/blockEditing'
 import { computeTapBpm } from '../audio-analysis/tapTempo'
+import { formatGridOffset, shiftPhraseGrid } from '../audio-analysis/gridOffset'
 import type { SongMetadata } from '../../../shared/song'
 
 interface Song {
@@ -30,6 +32,13 @@ interface AnalysisResult {
 }
 
 type Status = { kind: 'analyzing' } | { kind: 'ready' } | { kind: 'error'; message: string }
+
+/** How far one click of the fine nudge moves the grid — about the smallest offset that is still
+ *  audible against a kick. Holding Shift drops to a tenth of it for the last bit of polish. */
+const FINE_NUDGE_SEC = 0.01
+const EXTRA_FINE_NUDGE_SEC = 0.001
+/** Saving rewrites the whole sqlite file, so a burst of nudges is written once it settles. */
+const GRID_WRITE_DEBOUNCE_MS = 400
 
 /** A gap this long between taps means the user started a fresh tap-tempo sequence. */
 const TAP_RESET_GAP_MS = 2000
@@ -64,6 +73,10 @@ export default function SongAnalysisView({
   const monoSamplesRef = useRef<Float32Array | null>(null)
   const sampleRateRef = useRef<number | null>(null)
   const songIdRef = useRef<number | null>(null)
+  const gridWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingGridWriteRef = useRef<{ songId: number; bpm: number; phraseTimesSec: number[]; blocks: Block[] } | null>(
+    null
+  )
 
   const [status, setStatus] = useState<Status>({ kind: 'analyzing' })
   const [result, setResult] = useState<AnalysisResult | null>(null)
@@ -77,6 +90,8 @@ export default function SongAnalysisView({
   const [tapTimestampsMs, setTapTimestampsMs] = useState<number[]>([])
   /** True while "Reset" is re-running full automatic detection. */
   const [isResetting, setIsResetting] = useState(false)
+  /** How far the grid has been nudged by hand since this song was opened — just for the readout. */
+  const [gridOffsetSec, setGridOffsetSec] = useState(0)
 
   // Runs the analysis pipeline once per song and sets up the waveform.
   useEffect(() => {
@@ -89,6 +104,7 @@ export default function SongAnalysisView({
     setTapTimestampsMs([])
     setIsPlaying(false)
     setIsResetting(false)
+    setGridOffsetSec(0)
     setSaveFeedback('idle')
 
     // Cover/title/artist/key/rating are a nice-to-have read from the file's own tags — fetched
@@ -133,10 +149,15 @@ export default function SongAnalysisView({
         blocks = existingSong.blocks
         songIdRef.current = existingSong.id
       } else {
-        const analysis = await analyzeSong(arrayBuffer.slice(0))
+        const decoded = await decodeAudioBuffer(arrayBuffer.slice(0))
         if (cancelled) return
-        monoSamples = analysis.monoSamples
-        sampleRateRef.current = analysis.sampleRate
+        // Priority: this is the song the user is staring at, so it jumps any batch in the queue.
+        // keepSamples leaves the buffer here too — the waveform and the manual BPM override
+        // recompute from it, so it can't be transferred away.
+        const analysis = await getAnalysisPool().submit(decoded, { priority: true, keepSamples: true })
+        if (cancelled) return
+        monoSamples = decoded.monoSamples
+        sampleRateRef.current = decoded.sampleRate
         bpm = analysis.bpm
         durationSec = analysis.durationSec
         phraseTimesSec = analysis.phraseTimesSec
@@ -148,9 +169,12 @@ export default function SongAnalysisView({
           songIdRef.current = existingSong.id
           await window.api.db.updateSongAnalysis(existingSong.id, { bpm, phraseTimesSec, blocks })
         } else {
+          const tags = await resolveSongTags(song.filePath, song.fileName)
+          if (cancelled) return
           const inserted = await window.api.db.insertSong({
             filePath: song.filePath,
-            title: song.fileName,
+            ...tags,
+            tagsRead: true,
             bpm,
             durationMs: Math.round(durationSec * 1000),
             phraseTimesSec,
@@ -202,6 +226,14 @@ export default function SongAnalysisView({
 
     return () => {
       cancelled = true
+      // A nudge still waiting out its debounce would be lost when the view closes.
+      if (gridWriteTimerRef.current) clearTimeout(gridWriteTimerRef.current)
+      const pendingWrite = pendingGridWriteRef.current
+      if (pendingWrite) {
+        const { songId, bpm, phraseTimesSec, blocks } = pendingWrite
+        window.api.db.updateSongAnalysis(songId, { bpm, phraseTimesSec, blocks }).catch(() => {})
+        pendingGridWriteRef.current = null
+      }
       wavesurferRef.current?.destroy()
       wavesurferRef.current = null
       regionsRef.current = null
@@ -263,6 +295,28 @@ export default function SongAnalysisView({
     })
   }, [result, waveformReady])
 
+  // Left/right nudge the grid while the song view is open, so it can be lined up by ear without
+  // taking a hand off playback. Re-registered on every change so the handler sees the current grid.
+  useEffect(() => {
+    if (!result) return
+    const beatSec = 60 / result.bpm
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+      event.preventDefault()
+      const direction = event.key === 'ArrowLeft' ? -1 : 1
+      // Shift jumps a whole kick, for a grid that landed on the wrong beat entirely.
+      nudgeGrid(direction * (event.shiftKey ? beatSec : FINE_NUDGE_SEC))
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [result])
+
   function persistAnalysis(bpm: number, phraseTimesSec: number[], blocks: Block[]): void {
     if (songIdRef.current === null) return
     window.api.db.updateSongAnalysis(songIdRef.current, { bpm, phraseTimesSec, blocks }).catch(() => {})
@@ -273,6 +327,36 @@ export default function SongAnalysisView({
     const blocks = updater(result.blocks)
     persistAnalysis(result.bpm, result.phraseTimesSec, blocks)
     setResult({ ...result, blocks })
+  }
+
+  /** Queues a grid write instead of firing one per nudge: each save rewrites the entire sqlite
+   *  file, and holding an arrow key produces dozens of nudges a second. */
+  function persistGridSoon(bpm: number, phraseTimesSec: number[], blocks: Block[]): void {
+    if (songIdRef.current === null) return
+    pendingGridWriteRef.current = { songId: songIdRef.current, bpm, phraseTimesSec, blocks }
+    if (gridWriteTimerRef.current) clearTimeout(gridWriteTimerRef.current)
+    gridWriteTimerRef.current = setTimeout(() => {
+      const pendingWrite = pendingGridWriteRef.current
+      pendingGridWriteRef.current = null
+      if (!pendingWrite) return
+      window.api.db
+        .updateSongAnalysis(pendingWrite.songId, {
+          bpm: pendingWrite.bpm,
+          phraseTimesSec: pendingWrite.phraseTimesSec,
+          blocks: pendingWrite.blocks
+        })
+        .catch(() => {})
+    }, GRID_WRITE_DEBOUNCE_MS)
+  }
+
+  /** Slides the whole grid earlier (negative) or later, leaving tempo and blocks as they are. */
+  function nudgeGrid(deltaSec: number): void {
+    if (!result) return
+    const { phraseTimesSec, appliedSec } = shiftPhraseGrid(result.phraseTimesSec, deltaSec, result.durationSec)
+    if (appliedSec === 0) return
+    setGridOffsetSec((offset) => offset + appliedSec)
+    setResult({ ...result, phraseTimesSec })
+    persistGridSoon(result.bpm, phraseTimesSec, result.blocks)
   }
 
   /** Rebuilds the phrase grid + segmentation from a BPM value, without re-running kick detection. */
@@ -288,6 +372,7 @@ export default function SongAnalysisView({
     )
     const blocks = markBreakdowns(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
     persistAnalysis(grid.bpm, phraseTimesSec, blocks)
+    setGridOffsetSec(0)
     setResult({ bpm: grid.bpm, durationSec: result.durationSec, phraseTimesSec, blocks })
   }
 
@@ -303,10 +388,12 @@ export default function SongAnalysisView({
     setIsResetting(true)
     try {
       const arrayBuffer = await window.api.readAudioFile(song.filePath)
-      const analysis = await analyzeSong(arrayBuffer)
-      monoSamplesRef.current = analysis.monoSamples
-      sampleRateRef.current = analysis.sampleRate
+      const decoded = await decodeAudioBuffer(arrayBuffer)
+      const analysis = await getAnalysisPool().submit(decoded, { priority: true, keepSamples: true })
+      monoSamplesRef.current = decoded.monoSamples
+      sampleRateRef.current = decoded.sampleRate
       persistAnalysis(analysis.bpm, analysis.phraseTimesSec, analysis.blocks)
+      setGridOffsetSec(0)
       setResult({
         bpm: analysis.bpm,
         durationSec: analysis.durationSec,
@@ -395,12 +482,6 @@ export default function SongAnalysisView({
           <div className="song-summary__stats">
             <span className="song-summary__stat-value">{Math.round(result.bpm)}</span>
             {metadata?.key && <span className="song-summary__stat-value song-summary__stat-value--key">{metadata.key}</span>}
-            {metadata?.ratingStars != null && (
-              <span className="song-summary__stars">
-                {'★'.repeat(metadata.ratingStars)}
-                {'☆'.repeat(5 - metadata.ratingStars)}
-              </span>
-            )}
           </div>
         )}
       </div>
@@ -516,6 +597,39 @@ export default function SongAnalysisView({
                 </button>
               </>
             )}
+          </div>
+
+          <div className="manual-override__row">
+            <span>¿La rejilla no cae en el bombo?</span>
+            <div className="grid-nudge">
+              <button onClick={() => nudgeGrid(-60 / result.bpm)} title="Atrás un bombo entero">
+                ◀◀
+              </button>
+              <button
+                onClick={(event) => nudgeGrid(-(event.shiftKey ? EXTRA_FINE_NUDGE_SEC : FINE_NUDGE_SEC))}
+                title="Atrás 10 ms (Mayús: 1 ms)"
+              >
+                ◀
+              </button>
+              <span className="grid-nudge__value">{formatGridOffset(gridOffsetSec)}</span>
+              <button
+                onClick={(event) => nudgeGrid(event.shiftKey ? EXTRA_FINE_NUDGE_SEC : FINE_NUDGE_SEC)}
+                title="Adelante 10 ms (Mayús: 1 ms)"
+              >
+                ▶
+              </button>
+              <button onClick={() => nudgeGrid(60 / result.bpm)} title="Adelante un bombo entero">
+                ▶▶
+              </button>
+            </div>
+            <button
+              onClick={() => nudgeGrid(-gridOffsetSec)}
+              disabled={gridOffsetSec === 0}
+              title="Deshacer el ajuste manual y volver a la rejilla que había al abrir la canción"
+            >
+              Centrar
+            </button>
+            <span className="manual-override__hint">← → mueven 10 ms · Mayús + ← → un bombo</span>
           </div>
 
           <div className="manual-override__row">

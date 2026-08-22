@@ -66,16 +66,13 @@ function loadEssentia(): Promise<EssentiaInstance> {
  * since RhythmExtractor2013 never actually needs them, confirmed by a 10x-in-a-row stress test
  * against the same long track with no failures once the vector memory leak below was fixed.
  */
-export async function detectRhythm(
-  monoSamples: Float32Array,
-  minBpm = 100,
-  maxBpm = 250
-): Promise<RhythmResult> {
+async function extract(monoSamples: Float32Array, minBpm: number, maxBpm: number): Promise<RhythmResult> {
   const essentia = await loadEssentia()
   const vectorSignal = essentia.arrayToVector(monoSamples)
   const result = essentia.RhythmExtractor2013(vectorSignal, maxBpm, 'multifeature', minBpm)
 
   const kickTimesSec = Array.from(essentia.vectorToArray(result.ticks))
+  const bpm = result.bpm
 
   // RhythmExtractor2013's input and its vector-valued outputs are all Emscripten/embind objects:
   // their backing memory lives on the WASM heap and isn't garbage-collected with the JS wrapper,
@@ -86,5 +83,36 @@ export async function detectRhythm(
   result.estimates.delete()
   result.bpmIntervals.delete()
 
-  return { bpm: result.bpm, kickTimesSec }
+  return { bpm, kickTimesSec }
+}
+
+/** Below this, a track is suspected of having been read at half its real tempo. Nothing in this
+ *  music sits here legitimately-and-fast: 200 bpm frenchcore reads as 100, 220 uptempo as 110. */
+const OCTAVE_SUSPICION_BPM = 130
+
+/** Second-pass floor. It has to clear the doubtful reading's double-or-nothing zone: asking for
+ *  ≥130 on a 200 bpm track returns a nonsense 133 (measured), while ≥150 returns the real 199. */
+const OCTAVE_RETRY_MIN_BPM = 150
+
+/** How far from exactly twice the first reading the second may land and still count as the same
+ *  beat counted differently. Ratios around 1.5 turn up often — those are a different reading of
+ *  the metre, not an octave, and doubling them would be a guess. */
+const OCTAVE_RATIO_TOLERANCE = 0.06
+
+export async function detectRhythm(
+  monoSamples: Float32Array,
+  minBpm = 100,
+  maxBpm = 250
+): Promise<RhythmResult> {
+  const slow = await extract(monoSamples, minBpm, maxBpm)
+  if (slow.bpm >= OCTAVE_SUSPICION_BPM || OCTAVE_RETRY_MIN_BPM >= maxBpm) return slow
+
+  // A kick on every beat at 200 bpm is just as readable as one on every other beat at 100, and the
+  // extractor prefers the slower reading — which then puts a grid line on every second kick and
+  // makes each phrase twice as long as it is. Asking again from a floor above the slow reading
+  // settles it: if the answer is the same beat counted twice as often, take it, ticks and all.
+  const fast = await extract(monoSamples, OCTAVE_RETRY_MIN_BPM, maxBpm)
+  const isSameBeatDoubled = Math.abs(fast.bpm / slow.bpm - 2) <= OCTAVE_RATIO_TOLERANCE
+
+  return isSameBeatDoubled && fast.bpm <= maxBpm ? fast : slow
 }

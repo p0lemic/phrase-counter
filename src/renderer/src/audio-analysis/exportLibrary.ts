@@ -1,7 +1,7 @@
 import { formatBlocks } from './formatBlocks'
 import type { SongRecord } from '../../../shared/song'
 
-const CSV_HEADER = ['title', 'bpm', 'result', 'duration_sec', 'file_path']
+const CSV_HEADER = ['artist', 'title', 'bpm', 'result', 'duration_sec', 'file_path']
 
 function csvField(value: string | number): string {
   const text = String(value)
@@ -11,6 +11,7 @@ function csvField(value: string | number): string {
 export function songsToCsv(songs: SongRecord[]): string {
   const rows = songs.map((song) =>
     [
+      csvField(song.artist),
       csvField(song.title),
       csvField(Math.round(song.bpm)),
       csvField(formatBlocks(song.blocks)),
@@ -23,6 +24,7 @@ export function songsToCsv(songs: SongRecord[]): string {
 
 export function songsToJson(songs: SongRecord[]): string {
   const entries = songs.map((song) => ({
+    artist: song.artist,
     title: song.title,
     bpm: song.bpm,
     result: formatBlocks(song.blocks),

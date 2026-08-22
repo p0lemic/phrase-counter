@@ -1,11 +1,12 @@
-appId: com.javierroman.dropcount
-productName: Drop Count
+appId: com.javierroman.phrasecounter
+productName: Phrase Counter
 directories:
   output: release
 files:
   - out/**/*
   - package.json
 mac:
+  icon: assets/icon.icns
   category: public.app-category.music
   target:
     - target: dmg
@@ -13,11 +14,13 @@ mac:
         - arm64
         - x64
 win:
+  icon: assets/icon.ico
   target:
     - target: nsis
       arch:
         - x64
 linux:
+  icon: assets/icon.png
   target:
     - target: AppImage
       arch:

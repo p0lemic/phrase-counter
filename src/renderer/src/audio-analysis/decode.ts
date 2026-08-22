@@ -5,7 +5,10 @@ export interface DecodedAudio {
 }
 
 function mixToMono(audioBuffer: AudioBuffer): Float32Array {
-  if (audioBuffer.numberOfChannels === 1) return audioBuffer.getChannelData(0)
+  // Copied even when there's nothing to mix: getChannelData hands back the AudioBuffer's own
+  // memory, and transferring that to an analysis worker would detach it out from under the buffer
+  // (the same trap as commit c7eb02a, where decodeAudioData detached the buffer wavesurfer needed).
+  if (audioBuffer.numberOfChannels === 1) return new Float32Array(audioBuffer.getChannelData(0))
 
   const mono = new Float32Array(audioBuffer.length)
   for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import AppLogo from './components/AppLogo'
 import SongAnalysisView from './components/SongAnalysisView'
 import Library from './components/Library'
 
@@ -14,17 +15,26 @@ function isAudioFile(fileName: string): boolean {
   return AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
+/** This dropzone wraps the whole library, so it has to let the library's own song drags (onto a
+ *  collection in the sidebar) pass through untouched and only react to files dropped from Finder. */
+function isFileDrag(event: React.DragEvent): boolean {
+  return [...event.dataTransfer.types].includes('Files')
+}
+
 function LibraryWithDropzone({
   onOpenSong,
-  refreshKey
+  refreshToken,
+  isHidden
 }: {
   onOpenSong: (song: OpenSong) => void
-  refreshKey: number
+  refreshToken: number
+  isHidden: boolean
 }): React.JSX.Element {
   const [isDragging, setIsDragging] = useState(false)
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return
       event.preventDefault()
       setIsDragging(false)
 
@@ -42,14 +52,16 @@ function LibraryWithDropzone({
   return (
     <div
       className={`library-dropzone${isDragging ? ' library-dropzone--active' : ''}`}
+      hidden={isHidden}
       onDragOver={(event) => {
+        if (!isFileDrag(event)) return
         event.preventDefault()
         setIsDragging(true)
       }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
     >
-      <Library key={refreshKey} onOpenSong={onOpenSong} />
+      <Library onOpenSong={onOpenSong} refreshToken={refreshToken} />
     </div>
   )
 }
@@ -77,13 +89,17 @@ export default function App(): React.JSX.Element {
   return (
     <main className="app">
       <header className="app__header">
-        <h1>Drop Count</h1>
+        <AppLogo />
+        <h1>Phrase Counter</h1>
       </header>
-      {currentSong ? (
-        <SongAnalysisView song={currentSong} onClose={closeSong} />
-      ) : (
-        <LibraryWithDropzone onOpenSong={setCurrentSong} refreshKey={libraryRefreshKey} />
-      )}
+      {currentSong && <SongAnalysisView song={currentSong} onClose={closeSong} />}
+      {/* Kept mounted (just hidden) behind the song view: remounting it would throw away the
+          search, the selection, the open collection, the sort and the scroll position. */}
+      <LibraryWithDropzone
+        onOpenSong={setCurrentSong}
+        refreshToken={libraryRefreshKey}
+        isHidden={currentSong !== null}
+      />
     </main>
   )
 }

@@ -1,8 +1,23 @@
-import { useEffect, useState } from 'react'
-import { analyzeSong } from '../audio-analysis/analyzeSong'
+import { useEffect, useRef, useState } from 'react'
+import { decodeAudioBuffer } from '../audio-analysis/decode'
+import { analysisConcurrency, getAnalysisPool } from '../audio-analysis/analysisPool'
+import { runConcurrently } from '../audio-analysis/runConcurrently'
 import { formatBlocks } from '../audio-analysis/formatBlocks'
 import { songsToCsv, songsToJson } from '../audio-analysis/exportLibrary'
-import type { SongRecord } from '../../../shared/song'
+import { resolveDragIds, songsInCollection } from '../collections/membership'
+import { setDraggedSongIds } from '../collections/dragData'
+import { useCollections } from '../collections/useCollections'
+import { resolveSongTags } from '../tags/resolveSongTags'
+import CollectionsSidebar from './CollectionsSidebar'
+import DropdownMenu, { SEPARATOR } from './DropdownMenu'
+import EditableCell from './EditableCell'
+import { useColumnWidths } from './useColumnWidths'
+import { nextSort, sortSongs, type Sort, type SortKey } from './sortSongs'
+import type { ColumnKey } from './columnWidths'
+import EngineImportPanel, { type EngineSelection } from './EngineImportPanel'
+import ProgressToast, { type Progress } from './ProgressToast'
+import { CloseIcon, ExportIcon, PlusIcon, SearchIcon } from './icons'
+import type { SongRecord, SongTagsUpdate } from '../../../shared/song'
 
 interface OpenSongRequest {
   filePath: string
@@ -20,35 +35,190 @@ function formatDuration(durationMs: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-type SortKey = 'title' | 'bpm' | 'durationMs'
-type Sort = { key: SortKey; direction: 'asc' | 'desc' }
-
-function sortSongs(songs: SongRecord[], sort: Sort): SongRecord[] {
-  const factor = sort.direction === 'asc' ? 1 : -1
-  return [...songs].sort((a, b) => {
-    if (sort.key === 'title') return a.title.localeCompare(b.title) * factor
-    return (a[sort.key] - b[sort.key]) * factor
-  })
-}
-
-export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongRequest) => void }): React.JSX.Element {
+export default function Library({
+  onOpenSong,
+  refreshToken
+}: {
+  onOpenSong: (song: OpenSongRequest) => void
+  /** Bumped when a song view closes, so the table picks up whatever was edited in there. */
+  refreshToken: number
+}): React.JSX.Element {
   const [songs, setSongs] = useState<SongRecord[]>([])
-  const [addProgress, setAddProgress] = useState<{ current: number; total: number } | null>(null)
-  const [writeProgress, setWriteProgress] = useState<{ current: number; total: number } | null>(null)
+  const [progress, setProgress] = useState<Progress | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [sort, setSort] = useState<Sort>({ key: 'title', direction: 'asc' })
+  const [sort, setSort] = useState<Sort | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null)
+  const [isEngineImportOpen, setEngineImportOpen] = useState(false)
+  /** Songs whose edit couldn't reach the file's tags — shown with a marker in the row. */
+  const [libraryOnlyIds, setLibraryOnlyIds] = useState<Set<number>>(new Set())
+  /** The song just edited: the table is sorted by the very fields being edited, so its row jumps
+   *  somewhere else on save. Following it keeps the other field one double-click away. */
+  const [focusedSongId, setFocusedSongId] = useState<number | null>(null)
+  const focusedRowRef = useRef<HTMLTableRowElement | null>(null)
+  /** Flipped by the "Cancelar" button to stop a long analysis run between files. */
+  const cancelRef = useRef(false)
+  const collections = useCollections()
+  const columns = useColumnWidths()
 
-  async function refresh(): Promise<void> {
+  async function refresh(): Promise<SongRecord[]> {
     const fresh = await window.api.db.listSongs()
     setSongs(fresh)
     const freshIds = new Set(fresh.map((song) => song.id))
     setSelectedIds((previous) => new Set([...previous].filter((id) => freshIds.has(id))))
+    // Deleting songs also drops their collection links, so the sidebar counts need re-reading.
+    await collections.refresh()
+    return fresh
   }
 
   useEffect(() => {
-    refresh()
+    refresh().then(backfillTags)
   }, [])
+
+  useEffect(() => {
+    if (refreshToken > 0) refresh()
+  }, [refreshToken])
+
+  // Runs again once `songs` comes back from the save, which is when the row has already moved.
+  useEffect(() => {
+    if (focusedSongId === null) return
+    focusedRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const timer = setTimeout(() => setFocusedSongId(null), 2500)
+    return () => clearTimeout(timer)
+  }, [focusedSongId, songs])
+
+  /** Songs stored before title/artist existed carry the file name as their title and no artist.
+   *  This reads each one's real tags once — cheap next to analysis, since it never decodes audio —
+   *  and `tagsRead` makes it resumable: cancelling only leaves the rest for the next launch. */
+  async function backfillTags(allSongs: SongRecord[]): Promise<void> {
+    const pending = allSongs.filter((song) => !song.tagsRead)
+    if (pending.length === 0) return
+
+    cancelRef.current = false
+    const startedAt = Date.now()
+    let batch: ({ id: number } & SongTagsUpdate)[] = []
+    for (let i = 0; i < pending.length; i++) {
+      if (cancelRef.current) break
+      const song = pending[i]
+      setProgress({
+        label: 'Leyendo etiquetas',
+        current: i + 1,
+        total: pending.length,
+        fileName: basename(song.filePath),
+        startedAt
+      })
+      batch.push({ id: song.id, ...(await resolveSongTags(song.filePath, basename(song.filePath))) })
+      if (batch.length >= 50) {
+        await window.api.db.updateSongTagsBulk(batch)
+        batch = []
+      }
+    }
+    if (batch.length > 0) await window.api.db.updateSongTagsBulk(batch)
+
+    setProgress(null)
+    await refresh()
+  }
+
+  /** Saves an edited title/artist to the library and into the file's own tags. Formats without
+   *  writable tags (or a file we can't write) keep the edit library-side, flagged in the row. */
+  async function saveTags(song: SongRecord, update: SongTagsUpdate): Promise<void> {
+    setFocusedSongId(song.id)
+    await window.api.db.updateSongTags(song.id, update)
+    const writtenToFile = await window.api.writeSongTags(song.filePath, update)
+    setLibraryOnlyIds((previous) => {
+      const next = new Set(previous)
+      if (writtenToFile) next.delete(song.id)
+      else next.add(song.id)
+      return next
+    })
+    await refresh()
+  }
+
+  /** Analyzes one file and stores it, returning the stored song. An already-analyzed file comes
+   *  back untouched unless `overwriteExisting` — but "already in the library" isn't the same as
+   *  "analyzed": a song whose grid was invalidated by a migration is still missing its analysis,
+   *  and skipping it there is what left imported collections full of gridless songs.
+   *  Returns undefined for files that fail to decode (unsupported codec, corrupt file, ...). */
+  async function analyzeAndStore(filePath: string, overwriteExisting: boolean): Promise<SongRecord | undefined> {
+    try {
+      const existing = await window.api.db.findSongByPath(filePath)
+      if (existing && !overwriteExisting && existing.phraseTimesSec.length > 0) return existing
+
+      const arrayBuffer = await window.api.readAudioFile(filePath)
+      // Decoding stays here (OfflineAudioContext is main-thread only) but Chromium runs it off
+      // the UI thread; the expensive half goes to a worker, several songs at a time.
+      const decoded = await decodeAudioBuffer(arrayBuffer)
+      const analysis = await getAnalysisPool().submit(decoded)
+      const update = {
+        bpm: analysis.bpm,
+        phraseTimesSec: analysis.phraseTimesSec,
+        blocks: analysis.blocks
+      }
+
+      if (existing) {
+        await window.api.db.updateSongAnalysis(existing.id, update)
+        return { ...existing, ...update }
+      }
+      const tags = await resolveSongTags(filePath, basename(filePath))
+      return await window.api.db.insertSong({
+        filePath,
+        ...tags,
+        tagsRead: true,
+        durationMs: Math.round(analysis.durationSec * 1000),
+        ...update
+      })
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Rebuilds the beat grid of what you're looking at: the songs you've ticked, or else the ones
+   *  the table is showing (the open collection, narrowed by the search box). Saved block edits are
+   *  kept — only the grid and the bpm are recomputed. */
+  async function handleRebuildGrids(): Promise<void> {
+    const targets = gridRebuildTargets
+    if (targets.length === 0) return
+
+    const confirmed = window.confirm(
+      `Se van a recalcular las rejillas de ${targets.length} canción(es) ${gridRebuildScope}. ` +
+        `Puede tardar un rato — podrás cancelar a mitad y lo hecho se conserva. ` +
+        `Los bloques que hayas editado a mano no se tocan.`
+    )
+    if (!confirmed) return
+
+    cancelRef.current = false
+    const startedAt = Date.now()
+    let completed = 0
+    await runConcurrently(
+      targets,
+      analysisConcurrency(),
+      async (song) => {
+        try {
+          const arrayBuffer = await window.api.readAudioFile(song.filePath)
+          const decoded = await decodeAudioBuffer(arrayBuffer)
+          const analysis = await getAnalysisPool().submit(decoded)
+          await window.api.db.updateSongAnalysis(song.id, {
+            bpm: analysis.bpm,
+            phraseTimesSec: analysis.phraseTimesSec,
+            blocks: song.blocks.length > 0 ? song.blocks : analysis.blocks
+          })
+        } finally {
+          completed++
+          setProgress({
+            label: 'Recalculando rejillas',
+            current: completed,
+            total: targets.length,
+            fileName: basename(song.filePath),
+            startedAt
+          })
+        }
+      },
+      () => cancelRef.current
+    )
+
+    setProgress(null)
+    await refresh()
+  }
 
   /** Re-analyzes every path: inserts new files, and (only when `overwriteExisting`) refreshes
    *  already-known ones — used both by "+ Carpeta"/"+ Archivos" (skip known files) and
@@ -57,36 +227,103 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     const existingPaths = new Set(songs.map((song) => song.filePath))
     const targetPaths = overwriteExisting ? paths : paths.filter((path) => !existingPaths.has(path))
 
-    for (let i = 0; i < targetPaths.length; i++) {
-      setAddProgress({ current: i + 1, total: targetPaths.length })
-      const filePath = targetPaths[i]
-      try {
-        const arrayBuffer = await window.api.readAudioFile(filePath)
-        const analysis = await analyzeSong(arrayBuffer)
-        const existing = await window.api.db.findSongByPath(filePath)
+    cancelRef.current = false
+    const startedAt = Date.now()
+    let completed = 0
+    await runConcurrently(
+      targetPaths,
+      analysisConcurrency(),
+      async (filePath) => {
+        await analyzeAndStore(filePath, overwriteExisting)
+        completed++
+        setProgress({
+          label: 'Analizando canciones',
+          current: completed,
+          total: targetPaths.length,
+          fileName: basename(filePath),
+          startedAt
+        })
+      },
+      () => cancelRef.current
+    )
 
-        if (existing) {
-          await window.api.db.updateSongAnalysis(existing.id, {
-            bpm: analysis.bpm,
-            phraseTimesSec: analysis.phraseTimesSec,
-            blocks: analysis.blocks
+    setProgress(null)
+    await refresh()
+  }
+
+  /** Turns the chosen Engine DJ playlists into collections: first links the songs we already have
+   *  (instant), then analyzes the missing files one by one, adding each to its collection as it
+   *  lands so a long run keeps making visible progress. */
+  async function handleEngineImport(selections: EngineSelection[]): Promise<void> {
+    setEngineImportOpen(false)
+    const gridlessIds = new Set(songs.filter((song) => song.phraseTimesSec.length === 0).map((s) => s.id))
+    const total = selections.reduce(
+      (sum, selection) =>
+        sum + selection.missingPaths.length + selection.songIds.filter((id) => gridlessIds.has(id)).length,
+      0
+    )
+
+    // Songs already in the library get linked straight away, but one whose grid a migration
+    // invalidated still needs analyzing — otherwise the collection lands full of gridless songs.
+    const gridlessPaths = new Map(
+      songs.filter((song) => song.phraseTimesSec.length === 0).map((song) => [song.id, song.filePath])
+    )
+
+    const created: { collectionId: number; pendingPaths: string[] }[] = []
+    for (const selection of selections) {
+      const collection = await window.api.db.createCollection(selection.name)
+      await window.api.db.addSongsToCollection(collection.id, selection.songIds)
+      const linkedWithoutGrid = selection.songIds
+        .map((id) => gridlessPaths.get(id))
+        .filter((path): path is string => path !== undefined)
+      created.push({
+        collectionId: collection.id,
+        pendingPaths: [...selection.missingPaths, ...linkedWithoutGrid]
+      })
+    }
+    await refresh()
+
+    if (total === 0) return
+    const analyze = window.confirm(
+      `Colecciones creadas con las canciones que ya tenías.\n\nQuedan ${total} archivo(s) por analizar. ` +
+        `Aceptar los analiza ahora (puede tardar mucho; podrás cancelar a mitad). ` +
+        `Cancelar deja las colecciones solo con lo que ya estaba analizado.`
+    )
+    if (!analyze) return
+
+    cancelRef.current = false
+    const startedAt = Date.now()
+    let done = 0
+    for (const { collectionId, pendingPaths } of created) {
+      // Added in batches so a long run doesn't rewrite the database file once per song.
+      let pending: number[] = []
+      await runConcurrently(
+        pendingPaths,
+        analysisConcurrency(),
+        async (filePath) => {
+          const song = await analyzeAndStore(filePath, false)
+          done++
+          setProgress({
+            label: 'Analizando canciones',
+            current: done,
+            total,
+            fileName: basename(filePath),
+            startedAt
           })
-        } else {
-          await window.api.db.insertSong({
-            filePath,
-            title: basename(filePath),
-            bpm: analysis.bpm,
-            durationMs: Math.round(analysis.durationSec * 1000),
-            phraseTimesSec: analysis.phraseTimesSec,
-            blocks: analysis.blocks
-          })
-        }
-      } catch {
-        // Skip files that fail to decode (unsupported codec, corrupt file, etc.) and keep going.
-      }
+          if (song) pending.push(song.id)
+          if (pending.length >= 25) {
+            const batch = pending
+            pending = []
+            await window.api.db.addSongsToCollection(collectionId, batch)
+          }
+        },
+        () => cancelRef.current
+      )
+      if (pending.length > 0) await window.api.db.addSongsToCollection(collectionId, pending)
+      if (cancelRef.current) break
     }
 
-    setAddProgress(null)
+    setProgress(null)
     await refresh()
   }
 
@@ -119,15 +356,28 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     })
   }
 
-  /** Clicking a new column sorts it ascending; clicking the active column flips its direction. */
   function toggleSort(key: SortKey): void {
-    setSort((previous) =>
-      previous.key === key ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }
+    setSort((previous) => nextSort(previous, key))
+  }
+
+  /** The grab strip on a header's right edge. Its own clicks never reach the header's sort. */
+  function resizeHandle(key: ColumnKey): React.JSX.Element {
+    return (
+      <span
+        className={`library__resize${columns.resizingKey === key ? ' library__resize--active' : ''}`}
+        title="Arrastra para ajustar el ancho · doble clic para restaurarlo"
+        onMouseDown={(event) => columns.startResize(key, event)}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+          columns.reset(key)
+        }}
+      />
     )
   }
 
   function sortIndicator(key: SortKey): string {
-    if (sort.key !== key) return ''
+    if (sort?.key !== key) return ''
     return sort.direction === 'asc' ? ' ▲' : ' ▼'
   }
 
@@ -165,143 +415,319 @@ export default function Library({ onOpenSong }: { onOpenSong: (song: OpenSongReq
     )
     if (!confirmed) return
 
+    cancelRef.current = false
+    const startedAt = Date.now()
     for (let i = 0; i < targets.length; i++) {
-      setWriteProgress({ current: i + 1, total: targets.length })
+      if (cancelRef.current) break
+      setProgress({
+        label: 'Escribiendo en MP3',
+        current: i + 1,
+        total: targets.length,
+        fileName: basename(targets[i].filePath),
+        startedAt
+      })
       try {
         await window.api.writeSongComment(targets[i].filePath, formatBlocks(targets[i].blocks))
       } catch {
         // Skip files that fail to write (not an mp3, locked, read-only, etc.) and keep going.
       }
     }
-    setWriteProgress(null)
+    setProgress(null)
+  }
+
+  async function handleRemoveFromCollection(): Promise<void> {
+    if (activeCollectionId === null || selectedIds.size === 0) return
+    await collections.removeSongs(activeCollectionId, [...selectedIds])
+    setSelectedIds(new Set())
+  }
+
+  /** The per-row ✕: unlinks one song from the open collection without touching the library. */
+  async function removeSongFromCollection(songId: number): Promise<void> {
+    if (activeCollectionId === null) return
+    await collections.removeSongs(activeCollectionId, [songId])
+    setSelectedIds((previous) => {
+      if (!previous.has(songId)) return previous
+      const next = new Set(previous)
+      next.delete(songId)
+      return next
+    })
   }
 
   async function handleExportCsv(): Promise<void> {
-    await window.api.exportLibrary(songsToCsv(songs), 'drop-count.csv')
+    await window.api.exportLibrary(songsToCsv(songs), 'phrase-counter.csv')
   }
 
   async function handleExportJson(): Promise<void> {
-    await window.api.exportLibrary(songsToJson(songs), 'drop-count.json')
+    await window.api.exportLibrary(songsToJson(songs), 'phrase-counter.json')
   }
 
+  const collectionSongs = songsInCollection(songs, collections.members, activeCollectionId)
   const query = searchQuery.trim().toLowerCase()
-  const filteredSongs = query ? songs.filter((song) => song.title.toLowerCase().includes(query)) : songs
+  const filteredSongs = query
+    ? collectionSongs.filter(
+        (song) =>
+          song.title.toLowerCase().includes(query) || song.artist.toLowerCase().includes(query)
+      )
+    : collectionSongs
   const visibleSongs = sortSongs(filteredSongs, sort)
+  const activeCollection = collections.collections.find((c) => c.id === activeCollectionId)
+  // What "Recalcular rejillas" acts on: the ticked songs, or else exactly what the table shows.
+  const gridRebuildTargets =
+    selectedIds.size > 0 ? songs.filter((song) => selectedIds.has(song.id)) : visibleSongs
+  const gridRebuildScope =
+    selectedIds.size > 0
+      ? 'seleccionadas'
+      : activeCollection
+        ? `de «${activeCollection.name}»`
+        : 'de la librería'
+  const gridsPending = gridRebuildTargets.filter((song) => song.phraseTimesSec.length === 0).length
 
   return (
-    <div className="library">
-      <div className="library__toolbar">
-        <span className="library__search">
-          🔍
-          <input
-            type="text"
-            placeholder="Buscar por título…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+    <div className="library-layout">
+      <CollectionsSidebar
+        collections={collections.collections}
+        counts={collections.counts}
+        totalSongs={songs.length}
+        activeCollectionId={activeCollectionId}
+        onSelect={setActiveCollectionId}
+        onDropSongs={(collectionId, songIds) => collections.addSongs(collectionId, songIds)}
+        onCreate={(name, songIds) => collections.createWithSongs(name, songIds)}
+        onRename={(collectionId, name) => collections.rename(collectionId, name)}
+        onImportFromEngine={() => setEngineImportOpen(true)}
+        onDelete={(collectionId) => {
+          if (activeCollectionId === collectionId) setActiveCollectionId(null)
+          collections.remove(collectionId)
+        }}
+      />
+      <div className="library">
+        <div className="library__toolbar">
+          <span className="library__search">
+            <SearchIcon />
+            <input
+              type="text"
+              placeholder="Buscar por título o autor…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                className="library__search-clear"
+                onClick={() => setSearchQuery('')}
+                title="Borrar la búsqueda"
+              >
+                <CloseIcon />
+              </button>
+            )}
+          </span>
+          <span className="library__count">
+            {query ? `${visibleSongs.length} de ${collectionSongs.length}` : collectionSongs.length}{' '}
+            {collectionSongs.length === 1 ? 'canción' : 'canciones'}
+          </span>
+          <span className="library__toolbar-gap" />
+          {gridRebuildTargets.length > 0 && (
+            <button
+              onClick={handleRebuildGrids}
+              disabled={progress !== null}
+              title={`Vuelve a calcular la rejilla de compases de las ${gridRebuildTargets.length} canción(es) ${gridRebuildScope}${gridsPending > 0 ? ` — ${gridsPending} no tienen rejilla` : ''}`}
+            >
+              Recalcular rejillas ({gridRebuildTargets.length})
+              {gridsPending > 0 && <span className="library__pending-badge">{gridsPending}</span>}
+            </button>
+          )}
+          <DropdownMenu
+            label="Añadir"
+            icon={<PlusIcon />}
+            items={[
+              { label: 'Archivos…', onSelect: handleAddFiles },
+              { label: 'Carpeta…', onSelect: handleAddFolder },
+              SEPARATOR,
+              {
+                label: 'Reescanear carpeta…',
+                onSelect: handleRescanFolder,
+                title:
+                  'Vuelve a analizar todos los archivos de una carpeta, incluidos los que ya estén en la librería'
+              }
+            ]}
           />
-        </span>
-        <span className="library__count">
-          {query ? `${visibleSongs.length} de ${songs.length}` : songs.length} {songs.length === 1 ? 'canción' : 'canciones'}
-        </span>
-        <button onClick={handleAddFiles}>+ Archivos</button>
-        <button onClick={handleAddFolder}>+ Carpeta</button>
-        <button onClick={handleRescanFolder} title="Vuelve a analizar todos los archivos de una carpeta, incluidos los que ya estén en la librería">
-          Reescanear carpeta
-        </button>
-        {songs.length > 0 && (
-          <>
-            <button onClick={handleExportCsv}>Exportar CSV</button>
-            <button onClick={handleExportJson}>Exportar JSON</button>
-          </>
-        )}
+          <DropdownMenu
+            label="Exportar"
+            icon={<ExportIcon />}
+            disabled={songs.length === 0}
+            items={[
+              { label: 'CSV', onSelect: handleExportCsv },
+              { label: 'JSON', onSelect: handleExportJson }
+            ]}
+          />
+        </div>
+
         {selectedIds.size > 0 && (
-          <>
+          <div className="selection-bar">
+            <span className="selection-bar__count">
+              {selectedIds.size} seleccionada{selectedIds.size === 1 ? '' : 's'}
+            </span>
+            <span className="library__toolbar-gap" />
             <button
               onClick={handleBulkWriteComments}
-              disabled={writeProgress !== null}
+              disabled={progress !== null}
               title="Escribe el resultado en el comentario (ID3) de cada mp3 — visible en Engine DJ y software similar"
             >
-              Escribir en MP3 ({selectedIds.size})
+              Escribir en MP3
             </button>
-            <button className="library__bulk-delete" onClick={handleBulkDelete}>
-              Borrar seleccionadas ({selectedIds.size})
+            {activeCollection && (
+              <button
+                onClick={handleRemoveFromCollection}
+                title={`Quita las canciones de "${activeCollection.name}" — siguen en la librería y en sus otras colecciones`}
+              >
+                Quitar de «{activeCollection.name}»
+              </button>
+            )}
+            <button className="selection-bar__delete" onClick={handleBulkDelete}>
+              Borrar
             </button>
-          </>
+            <button
+              className="selection-bar__clear"
+              onClick={() => setSelectedIds(new Set())}
+              title="Quitar la selección"
+            >
+              <CloseIcon />
+            </button>
+          </div>
         )}
-        {addProgress && (
-          <span className="library__progress">
-            Analizando {addProgress.current}/{addProgress.total}…
-          </span>
-        )}
-        {writeProgress && (
-          <span className="library__progress">
-            Escribiendo {writeProgress.current}/{writeProgress.total}…
-          </span>
+
+        {songs.length === 0 ? (
+          <p className="library__empty">
+            Tu librería está vacía. Añade canciones o arrastra un archivo de audio.
+          </p>
+        ) : collectionSongs.length === 0 ? (
+          <p className="library__empty">
+            "{activeCollection?.name}" está vacía. Arrastra aquí canciones desde "Todas las canciones".
+          </p>
+        ) : visibleSongs.length === 0 ? (
+          <p className="library__empty">Ninguna canción coincide con "{searchQuery}".</p>
+        ) : (
+          <div className="library__table-scroll">
+            <table className="library__table">
+              <colgroup>
+                <col style={{ width: '32px' }} />
+                <col style={{ width: `${columns.widths.index}px` }} />
+                <col style={{ width: `${columns.widths.artist}px` }} />
+                <col style={{ width: `${columns.widths.title}px` }} />
+                <col style={{ width: `${columns.widths.bpm}px` }} />
+                <col style={{ width: `${columns.widths.result}px` }} />
+                <col style={{ width: `${columns.widths.duration}px` }} />
+                {activeCollection && <col style={{ width: '32px' }} />}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={visibleSongs.length > 0 && visibleSongs.every((song) => selectedIds.has(song.id))}
+                      onChange={toggleSelectAll}
+                      title="Seleccionar todas"
+                    />
+                  </th>
+                  <th className="library__index">
+                    #{resizeHandle('index')}
+                  </th>
+                  <th className="library__sortable" onClick={() => toggleSort('artist')}>
+                    Autor{sortIndicator('artist')}
+                    {resizeHandle('artist')}
+                  </th>
+                  <th className="library__sortable" onClick={() => toggleSort('title')}>
+                    Título{sortIndicator('title')}
+                    {resizeHandle('title')}
+                  </th>
+                  <th className="library__sortable library__index" onClick={() => toggleSort('bpm')}>
+                    BPM{sortIndicator('bpm')}
+                    {resizeHandle('bpm')}
+                  </th>
+                  <th>
+                    Resultado{resizeHandle('result')}
+                  </th>
+                  <th className="library__sortable library__index" onClick={() => toggleSort('durationMs')}>
+                    Duración{sortIndicator('durationMs')}
+                    {resizeHandle('duration')}
+                  </th>
+                  {activeCollection && <th />}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleSongs.map((song, i) => (
+                  <tr
+                    key={song.id}
+                    ref={song.id === focusedSongId ? focusedRowRef : undefined}
+                    className={song.id === focusedSongId ? 'library__row--focused' : undefined}
+                    draggable
+                    onDragStart={(event) => setDraggedSongIds(event.dataTransfer, resolveDragIds(song.id, selectedIds))}
+                    onClick={() => onOpenSong({ filePath: song.filePath, fileName: song.title })}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(song.id)}
+                        onChange={() => toggleSelected(song.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </td>
+                    <td className="library__index">{i + 1}</td>
+                    <td className="library__title">
+                      <EditableCell
+                        value={song.artist}
+                        placeholder="Sin autor"
+                        onCommit={(artist) => saveTags(song, { title: song.title, artist })}
+                      />
+                    </td>
+                    <td className="library__title">
+                      <EditableCell
+                        value={song.title}
+                        placeholder="Sin título"
+                        onCommit={(title) => saveTags(song, { title, artist: song.artist })}
+                      />
+                      {libraryOnlyIds.has(song.id) && (
+                        <span
+                          className="library__library-only"
+                          title={
+                            song.filePath.toLowerCase().endsWith('.mp3')
+                              ? 'No se pudo escribir la etiqueta en el archivo — el cambio se guarda solo en Phrase Counter'
+                              : 'Este formato no admite etiquetas escribibles — el cambio se guarda solo en Phrase Counter'
+                          }
+                        >
+                          •
+                        </span>
+                      )}
+                    </td>
+                    <td className="library__index">{Math.round(song.bpm)}</td>
+                    <td className="library__result">{formatBlocks(song.blocks)}</td>
+                    <td className="library__index">{formatDuration(song.durationMs)}</td>
+                    {activeCollection && (
+                      <td className="library__row-remove-cell">
+                        <button
+                          className="library__row-remove"
+                          title={`Quitar de «${activeCollection.name}» — la canción sigue en la librería`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            removeSongFromCollection(song.id)
+                          }}
+                        >
+                          <CloseIcon />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
-
-      {songs.length === 0 ? (
-        <p className="library__empty">
-          Tu librería está vacía. Añade canciones o arrastra un archivo de audio.
-        </p>
-      ) : visibleSongs.length === 0 ? (
-        <p className="library__empty">Ninguna canción coincide con "{searchQuery}".</p>
-      ) : (
-        <table className="library__table">
-          <colgroup>
-            <col style={{ width: '32px' }} />
-            <col style={{ width: '40px' }} />
-            <col style={{ width: '40%' }} />
-            <col style={{ width: '70px' }} />
-            <col style={{ width: '25%' }} />
-            <col style={{ width: '90px' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  checked={visibleSongs.length > 0 && visibleSongs.every((song) => selectedIds.has(song.id))}
-                  onChange={toggleSelectAll}
-                  title="Seleccionar todas"
-                />
-              </th>
-              <th className="library__index">#</th>
-              <th className="library__sortable" onClick={() => toggleSort('title')}>
-                Título{sortIndicator('title')}
-              </th>
-              <th className="library__sortable library__index" onClick={() => toggleSort('bpm')}>
-                BPM{sortIndicator('bpm')}
-              </th>
-              <th>Resultado</th>
-              <th className="library__sortable library__index" onClick={() => toggleSort('durationMs')}>
-                Duración{sortIndicator('durationMs')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleSongs.map((song, i) => (
-              <tr
-                key={song.id}
-                onClick={() => onOpenSong({ filePath: song.filePath, fileName: song.title })}
-              >
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(song.id)}
-                    onChange={() => toggleSelected(song.id)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </td>
-                <td className="library__index">{i + 1}</td>
-                <td className="library__title">{song.title}</td>
-                <td className="library__index">{Math.round(song.bpm)}</td>
-                <td className="library__result">{formatBlocks(song.blocks)}</td>
-                <td className="library__index">{formatDuration(song.durationMs)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {progress && <ProgressToast progress={progress} onCancel={() => (cancelRef.current = true)} />}
+      {isEngineImportOpen && (
+        <EngineImportPanel
+          songs={songs}
+          onClose={() => setEngineImportOpen(false)}
+          onImport={handleEngineImport}
+        />
       )}
     </div>
   )

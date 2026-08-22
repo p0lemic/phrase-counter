@@ -43,4 +43,24 @@ describe('detectRhythm', () => {
     expect(result.bpm).toBeCloseTo(bpm, -1)
     expect(result.kickTimesSec.length).toBeGreaterThan(20)
   }, 20000)
+
+  test('reports a fast track at its real tempo instead of half of it', async () => {
+    // Frenchcore and uptempo run at 200+ bpm, where half-time (100) is just as valid a reading of
+    // the beat and the one the extractor tends to pick — which then counts every other kick,
+    // halving the phrase grid. A kick on every beat at 200 must come back as 200.
+    const buffer = makeClickTrack(SAMPLE_RATE, 200, 96)
+
+    const result = await detectRhythm(buffer)
+
+    expect(result.bpm).toBeGreaterThan(190)
+    expect(result.bpm).toBeLessThan(210)
+  }, 40000)
+
+  test('leaves a genuinely slow track alone', async () => {
+    const buffer = makeClickTrack(SAMPLE_RATE, 110, 60)
+
+    const result = await detectRhythm(buffer)
+
+    expect(result.bpm).toBeCloseTo(110, -1)
+  }, 40000)
 })

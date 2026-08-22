@@ -1,18 +1,30 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import NodeID3 from 'node-id3'
 import {
+  addSongsToCollection,
+  createCollection,
+  deleteCollection,
   deleteSong,
   findSongByFilePath,
   insertSong,
+  listCollectionMembers,
+  listCollections,
   listSongs,
   openDatabase,
+  updateSongTags,
+  updateSongTagsBulk,
+  removeSongsFromCollection,
+  renameCollection,
   updateSongAnalysis,
   type NewSongRecord
 } from './database'
-import type { SongAnalysisUpdate, SongMetadata } from '../shared/song'
+import { DEFAULT_ENGINE_LIBRARY_DIR, readEngineLibrary } from './engineLibrary'
+import type { EngineLibrary } from '../shared/engine'
+import type { SongAnalysisUpdate, SongMetadata, SongTagsUpdate } from '../shared/song'
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.aiff', '.m4a', '.ogg']
 
@@ -48,8 +60,7 @@ const EMPTY_METADATA: SongMetadata = {
   artist: null,
   album: null,
   coverDataUrl: null,
-  key: null,
-  ratingStars: null
+  key: null
 }
 
 ipcMain.handle('read-song-metadata', async (_event, filePath: string): Promise<SongMetadata> => {
@@ -61,15 +72,12 @@ ipcMain.handle('read-song-metadata', async (_event, filePath: string): Promise<S
     const coverDataUrl = picture
       ? `data:${picture.format};base64,${Buffer.from(picture.data).toString('base64')}`
       : null
-    const rating = common.rating?.find((r) => r.rating !== undefined)?.rating
-
     return {
       title: common.title ?? null,
       artist: common.artist ?? null,
       album: common.album ?? null,
       coverDataUrl,
-      key: common.key ?? null,
-      ratingStars: rating !== undefined ? Math.round(rating * 5) : null
+      key: common.key ?? null
     }
   } catch {
     // Missing/corrupt tags shouldn't block opening the song — just show nothing extra.
@@ -98,13 +106,58 @@ ipcMain.handle('write-song-comment', async (_event, filePath: string, comment: s
   }
 })
 
+/** Writes title/artist into an mp3's ID3 tags, leaving every other tag (cover art, rating, our
+ *  own block comment) untouched — same merge-in-JS approach as write-song-comment above.
+ *  Returns false for formats node-id3 can't write, so the caller can keep the edit library-only. */
+ipcMain.handle('write-song-tags', async (_event, filePath: string, tags: SongTagsUpdate): Promise<boolean> => {
+  if (!filePath.toLowerCase().endsWith('.mp3')) return false
+  try {
+    const existingTags = await NodeID3.Promise.read(filePath)
+    await NodeID3.Promise.write({ ...existingTags, title: tags.title, artist: tags.artist }, filePath)
+    return true
+  } catch {
+    return false
+  }
+})
+
 ipcMain.handle('db:list-songs', () => listSongs())
 ipcMain.handle('db:find-song-by-path', (_event, filePath: string) => findSongByFilePath(filePath))
 ipcMain.handle('db:insert-song', (_event, song: NewSongRecord) => insertSong(song))
 ipcMain.handle('db:update-song-analysis', (_event, id: number, update: SongAnalysisUpdate) =>
   updateSongAnalysis(id, update)
 )
+ipcMain.handle('db:update-song-tags', (_event, id: number, update: SongTagsUpdate) =>
+  updateSongTags(id, update)
+)
+ipcMain.handle('db:update-song-tags-bulk', (_event, updates: { id: number; title: string; artist: string }[]) =>
+  updateSongTagsBulk(updates)
+)
 ipcMain.handle('db:delete-song', (_event, id: number) => deleteSong(id))
+
+ipcMain.handle('db:list-collections', () => listCollections())
+ipcMain.handle('db:create-collection', (_event, name: string) => createCollection(name))
+ipcMain.handle('db:rename-collection', (_event, id: number, name: string) => renameCollection(id, name))
+ipcMain.handle('db:delete-collection', (_event, id: number) => deleteCollection(id))
+ipcMain.handle('db:list-collection-members', () => listCollectionMembers())
+ipcMain.handle('db:add-songs-to-collection', (_event, collectionId: number, songIds: number[]) =>
+  addSongsToCollection(collectionId, songIds)
+)
+ipcMain.handle('db:remove-songs-from-collection', (_event, collectionId: number, songIds: number[]) =>
+  removeSongsFromCollection(collectionId, songIds)
+)
+
+ipcMain.handle('engine:read-library', (_event, libraryDir?: string): Promise<EngineLibrary> =>
+  readEngineLibrary(libraryDir ?? DEFAULT_ENGINE_LIBRARY_DIR)
+)
+
+ipcMain.handle('dialog:pick-engine-library', async (): Promise<string | null> => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+    defaultPath: DEFAULT_ENGINE_LIBRARY_DIR,
+    message: 'Elige la carpeta "Engine Library"'
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
 
 ipcMain.handle('dialog:open-audio-files', async (): Promise<string[]> => {
   const result = await dialog.showOpenDialog({
@@ -142,6 +195,17 @@ function createWindow(): void {
     }
   })
 
+  // Empaquetada, el icono lo pone electron-builder (assets/icon.icns|ico); en
+  // desarrollo hay que ponerlo a mano o sale el logo de Electron.
+  if (is.dev) {
+    const devIcon = join(app.getAppPath(), 'assets', 'icon.png')
+    if (process.platform === 'darwin') {
+      app.dock?.setIcon(devIcon)
+    } else {
+      mainWindow.setIcon(devIcon)
+    }
+  }
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
@@ -166,12 +230,47 @@ function createWindow(): void {
 
 // Dev-only escape hatch to point the whole app (DB + Electron profile) at a throwaway folder
 // during manual testing, so it never touches the user's real library at the default userData path.
-if (is.dev && process.env['DROP_COUNT_TEST_USERDATA_DIR']) {
-  app.setPath('userData', process.env['DROP_COUNT_TEST_USERDATA_DIR'])
+const testUserDataDir = is.dev ? process.env['DROP_COUNT_TEST_USERDATA_DIR'] : undefined
+if (testUserDataDir) {
+  app.setPath('userData', testUserDataDir)
+}
+
+const LIBRARY_DIR = 'phrase-counter'
+const LIBRARY_FILE = 'phrase-counter.sqlite'
+
+// Electron derives userData from the app name, which differs between `npm run dev` (package.json
+// `name`) and the packaged app (productName) — so the two ended up with separate, silently
+// diverging libraries. Pinning the folder gives both the same one.
+if (!testUserDataDir) {
+  app.setPath('userData', join(app.getPath('appData'), LIBRARY_DIR))
+}
+
+// Libraries left behind by the names this app has had before the folder was pinned. Copied over
+// the first time, leaving the original in place as a backup. Skipped when running against a
+// throwaway userData dir, which is meant to start empty.
+const LEGACY_LIBRARIES: [dir: string, file: string][] = [
+  ['Phrase Counter', 'phrase-counter.sqlite'],
+  ['drop-count', 'drop-count.sqlite'],
+  ['Drop Count', 'drop-count.sqlite']
+]
+
+function resolveLibraryPath(): string {
+  const libraryPath = join(app.getPath('userData'), LIBRARY_FILE)
+  if (existsSync(libraryPath) || testUserDataDir) return libraryPath
+
+  for (const [dir, file] of LEGACY_LIBRARIES) {
+    const legacyPath = join(app.getPath('appData'), dir, file)
+    if (!existsSync(legacyPath)) continue
+    mkdirSync(app.getPath('userData'), { recursive: true })
+    copyFileSync(legacyPath, libraryPath)
+    console.log(`[main] librería migrada desde ${legacyPath}`)
+    break
+  }
+  return libraryPath
 }
 
 app.whenReady().then(async () => {
-  await openDatabase(join(app.getPath('userData'), 'drop-count.sqlite'))
+  await openDatabase(resolveLibraryPath())
   createWindow()
 
   app.on('activate', function () {
