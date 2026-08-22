@@ -1,7 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { Collection, CollectionMember } from '../shared/collection'
-import type { EngineLibrary } from '../shared/engine'
+import type {
+  EngineLibrary,
+  EngineRevertResult,
+  EngineSyncRequest,
+  EngineSyncResult
+} from '../shared/engine'
 import type {
   NewSongRecord,
   SongAnalysisUpdate,
@@ -45,7 +50,15 @@ const api = {
     /** Reads Engine DJ's library (read-only). Defaults to ~/Music/Engine Library. */
     readLibrary: (libraryDir?: string): Promise<EngineLibrary> =>
       ipcRenderer.invoke('engine:read-library', libraryDir),
-    pickLibraryDir: (): Promise<string | null> => ipcRenderer.invoke('dialog:pick-engine-library')
+    pickLibraryDir: (): Promise<string | null> => ipcRenderer.invoke('dialog:pick-engine-library'),
+    /** Engine holds its database open while it runs, so a sync has to wait for it to close. */
+    isRunning: (): Promise<boolean> => ipcRenderer.invoke('engine:is-running'),
+    /** Writes our analysis into Engine's library. `dryRun` only counts what would change. */
+    sync: (songIds: number[], options: EngineSyncRequest): Promise<EngineSyncResult> =>
+      ipcRenderer.invoke('engine:sync', songIds, options),
+    /** Strips the title suffixes and blanks the cues a sync wrote. */
+    revertSync: (songIds: number[], libraryDir?: string): Promise<EngineRevertResult> =>
+      ipcRenderer.invoke('engine:revert-sync', songIds, libraryDir)
   },
   openAudioFilesDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-files'),
   openAudioFolderDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:open-audio-folder'),

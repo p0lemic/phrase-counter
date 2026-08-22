@@ -1125,3 +1125,85 @@ body.is-resizing-column {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+
+/* "Enviar a Engine DJ": the checkboxes each carry a paragraph of explanation, so the rows are
+   laid out as a checkbox beside a stacked title + hint rather than a single line of text. */
+.engine-sync__intro {
+  margin: 0 0 16px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.engine-sync__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.engine-sync__option:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.engine-sync__option input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.engine-sync__option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.engine-sync__hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.engine-sync__hint code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 11px;
+}
+
+.engine-sync__preview {
+  margin: 12px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.engine-sync__warning {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.engine-sync__result {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.engine-sync__result p {
+  margin: 0 0 6px;
+}
+
+.engine-sync__result p:last-child {
+  margin-bottom: 0;
+}

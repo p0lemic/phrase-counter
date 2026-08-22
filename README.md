@@ -44,6 +44,7 @@ Every number is one block; every block is a run of 32-kick phrases. Numbers in p
 | 📚 **Persistent library** | Local SQLite. Drop in files or a whole folder; analysis is cached, so reopening a song never re-runs detection. Sortable, searchable, editable title/artist. |
 | 🗂️ **Collections** | Crates. A song can live in as many as you like — drag songs onto a collection in the sidebar. |
 | 🎛️ **Engine DJ import** | Reads Engine DJ's own library (**strictly read-only**) and turns its playlists into collections. |
+| 📟 **Engine DJ sync** | Pushes the structure back out to Engine as a **title suffix and labelled hot cues**, so it shows up on the controller's screen. See [below](#getting-the-structure-onto-a-denon-controller). |
 | 🏷️ **Writes back to your tags** | Stamps the result into the mp3's ID3 comment, so it shows up in Engine DJ, Rekordbox, or whatever else reads tags. |
 | 📤 **Export** | The whole library — or one collection — out to CSV or JSON. |
 | ⚡ **Batch analysis** | A worker pool chews through a folder in the background, with progress and an ETA. |
@@ -146,11 +147,47 @@ before or just after every kick. Sliding the whole grid as one piece onto the ki
 is what actually puts it on the beat: measured against real tracks, it captures **76–666% more
 kick-attack energy** than re-anchoring tick by tick.
 
+## Getting the structure onto a Denon controller
+
+Writing the result into the mp3's ID3 comment gets it into Engine DJ's library, and Engine DJ on the
+desktop shows it. **Engine OS — the firmware on the controller itself — does not draw the Comment
+field**, so on a Prime 4 or an SC Live the analysis is invisible exactly where it's most useful.
+
+**Export → Send to Engine DJ** puts it where the hardware does look:
+
+- **Title** — appends `[PC 8+16+(4)+16+8]` to Engine's copy of the track title, so the shape is
+  readable in the browser before you load anything. It is written **only into Engine's database,
+  never into the mp3**, so the file keeps a clean title for every other program.
+- **Hot cues** — a cue on every block boundary, labelled with its phrase count and coloured by kind
+  (blue block, orange breakdown, red drop). These show up on the waveform and on the performance
+  pads, and double as jump points.
+- **Comment** — refreshes Engine's copy, which otherwise keeps whatever it read the first time it
+  imported the file.
+
+Engine gives each track **eight** hot cue slots. Tracks with more blocks than that can't be shown in
+full, so the cues that matter for mixing are kept first — the drop, then the breakdowns, then the
+rest in order — rather than simply cutting off at the eighth block.
+
+### Before you sync
+
+- **Close Engine DJ.** It holds its database open and would overwrite the changes. The app checks
+  and refuses to run while it's open.
+- A **timestamped backup** of `m.db` is written next to it before anything is modified, and the
+  database is replaced through an atomic rename.
+- **Re-export to your USB drive** from Engine DJ afterwards, or the controller won't see any of it.
+- **Send to Engine DJ → Revert** undoes it: title suffixes stripped, cues cleared.
+
+The format of Engine's `quickCues` blob was reverse-engineered (zlib behind a length prefix, eight
+label/position/colour records, positions in samples at the track's *own* sample rate — the library
+is not all 44.1 kHz). `src/main/engineCues.test.ts` round-trips real blobs byte for byte to keep
+that honest, and `engineSync.integration.test.ts` runs the whole sync against a copy of a real
+library — opt in with `PHRASE_COUNTER_ENGINE_LIBRARY` and `PHRASE_COUNTER_LIBRARY`.
+
 ### Layout
 
 ```
 src/
-├── main/        Electron main process — SQLite, ID3 read/write, Engine DJ import, dialogs
+├── main/        Electron main process — SQLite, ID3 read/write, Engine DJ import + sync, dialogs
 ├── preload/     the typed IPC bridge
 ├── renderer/    React UI
 │   └── src/

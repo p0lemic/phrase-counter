@@ -1,0 +1,98 @@
+[
+  {
+    "trackId": 1837,
+    "quickCues": "AAAAgXicY2AAAw6G/R8YEIB2HDgbxgAAELAQ3w==",
+    "trackData": "AAAALHicc7ja0cAAAxtL9v4HAgYcAAD7yQf8",
+    "trailerLen": 17,
+    "sampleRate": 22050,
+    "cuesUsed": 0
+  },
+  {
+    "trackId": 2327,
+    "quickCues": "AAAAgXicY2AAAw6G/R8YEIB2HDgbxgAAELAQ3w==",
+    "trackData": "AAAALHicc7jvwAAHO76u/g8EDDgAAOsUB7Q=",
+    "trailerLen": 17,
+    "sampleRate": 32000,
+    "cuesUsed": 0
+  },
+  {
+    "trackId": 1,
+    "quickCues": "AAAAgXicY2AAAw6G/R8YEIB2HDgbxgAAELAQ3w==",
+    "trackData": "AAAALHicc3ja0cAAA0dj1P4DAQMOAADs+gdx",
+    "trailerLen": 17,
+    "sampleRate": 44100,
+    "cuesUsed": 0
+  },
+  {
+    "trackId": 1114,
+    "quickCues": "AAAAhnicY2AAAw5W59JUBUNHq0lHcktXrvz/5bIFw/4PDAhAVY7DeunJDkhyDAAMjRYl",
+    "trackData": "AAAALHicc3ja0cAABYyKnCC2OAMOAAByXwLw",
+    "trailerLen": 17,
+    "sampleRate": 44100,
+    "cuesUsed": 1
+  },
+  {
+    "trackId": 1692,
+    "quickCues": "AAAAi3icY2AAAw5W59JUBUOHb3bbw6P7H/3/ctkCLGLkqLrEr8md8d7/940GDPs/MCAApRyYXYwwAQCa9h5E",
+    "trackData": "AAAALHicc3ja0cAAA7MPZ/8HAgYcAAD7xwfz",
+    "trailerLen": 17,
+    "sampleRate": 44100,
+    "cuesUsed": 2
+  },
+  {
+    "trackId": 21874,
+    "quickCues": "AAAAkHicY2AAAw5W59JUBUNHvqyp3K2Mt/9/uWwBFjFyVP0789Xigyn/3zcagEWMHVMcd+262er3f1XoEYb9HxgQgAwOzHhGmAAAIX8lTA==",
+    "trackData": "AAAALHicc3ja0cAAA48fBwNJQQYcAACdmgRY",
+    "trailerLen": 17,
+    "sampleRate": 44100,
+    "cuesUsed": 3
+  },
+  {
+    "trackId": 18443,
+    "quickCues": "AAAAlXicY2AAAw5W59JUBUOHX9seuC4wevL/y2ULhv0fGOAALG3sGKAUN4VxguD/VaFHwCImjiE8oYnv0rn/nzOyBIuYOiafF9583OfH/7Zj3ihG4ObAbGV0uDPFEiQAAE17K+o=",
+    "trackData": "AAAALHicc3ja0cAAAx9a1wNJdvsr4gsSgAz7K2HFD0D0juOcC4A0AAD2C6Y=",
+    "trailerLen": 17,
+    "sampleRate": 44100,
+    "cuesUsed": 4
+  },
+  {
+    "trackId": 12265,
+    "quickCues": "AAAAqXicY2AAAw5W59JUBUNHxwVrQdz/Xy5bgEWMHF0eeoNF3jcagEWMHZ1/zwaLrAo9AhYxcXQysAaLnDOyBIuYOrpKbQeLtB3zBouYOTrn8IJFFI4VgEXMHV26NcEiDCtWgkUsHJ3aYsEiooWPHJbYMKAAAIzzLJE=",
+    "trackData": "AAAALHicc3ja0cAAA/l/G/4DAQMOAAD/oAgW",
+    "trailerLen": 17,
+    "sampleRate": 44100,
+    "cuesUsed": 8
+  },
+  {
+    "trackId": 78,
+    "quickCues": "AAAAgXicY2AAAw6G/R8YEIB2HDgbxgAAELAQ3w==",
+    "trackData": "AAAALHicc3hewAAHF1xm/QcCBhwAAOCJB0I=",
+    "trailerLen": 17,
+    "sampleRate": 48000,
+    "cuesUsed": 0
+  },
+  {
+    "trackId": 1822,
+    "quickCues": "AAAAhnicY2AAAw5W59JUBUOH2481ZrqVTf7/5bIFw/4PDAhAVY7DQcGJCUhyDAAVaxZU",
+    "trackData": "AAAALHicc3hewAADjBz3Zv0HAgYcAADafQcV",
+    "trailerLen": 17,
+    "sampleRate": 48000,
+    "cuesUsed": 1
+  },
+  {
+    "trackId": 12328,
+    "quickCues": "AAAAi3icY2AAAw6G/R8Y4IDVuTRVwcjhUuP6BCDv//tGA7CIsaONoxxzYEns/1WhR1A0kMOBGQ9nAADjXhxU",
+    "trackData": "AAAALHicc3hewAAHxQcagCSn/VPh7gVAhv1jhmcJIPqa5JYDQBoA3IIKwA==",
+    "trailerLen": 17,
+    "sampleRate": 48000,
+    "cuesUsed": 2
+  },
+  {
+    "trackId": 23060,
+    "quickCues": "AAAAkHicY2AAAw5W59JUBUOH5wKnmVpvyv7/ctmCYf8HBjgASxs7BkdXv95kYvx/VegRsIiJY/apqGTT9vL/54wsUTQQyYFZyOhwV3R7A1AAACYIJQY=",
+    "trackData": "AAAALHicc3hewAADjMJ5Tf+BwP7ZzEoHIN/+UcxqkLj9wZchDUAaADHsDfQ=",
+    "trailerLen": 17,
+    "sampleRate": 48000,
+    "cuesUsed": 3
+  }
+]

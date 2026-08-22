@@ -15,6 +15,7 @@ import { useColumnWidths } from './useColumnWidths'
 import { nextSort, sortSongs, type Sort, type SortKey } from './sortSongs'
 import type { ColumnKey } from './columnWidths'
 import EngineImportPanel, { type EngineSelection } from './EngineImportPanel'
+import EngineSyncPanel from './EngineSyncPanel'
 import ProgressToast, { type Progress } from './ProgressToast'
 import { CloseIcon, ExportIcon, PlusIcon, SearchIcon } from './icons'
 import type { SongRecord, SongTagsUpdate } from '../../../shared/song'
@@ -50,6 +51,7 @@ export default function Library({
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null)
   const [isEngineImportOpen, setEngineImportOpen] = useState(false)
+  const [isEngineSyncOpen, setEngineSyncOpen] = useState(false)
   /** Songs whose edit couldn't reach the file's tags — shown with a marker in the row. */
   const [libraryOnlyIds, setLibraryOnlyIds] = useState<Set<number>>(new Set())
   /** The song just edited: the table is sorted by the very fields being edited, so its row jumps
@@ -555,7 +557,14 @@ export default function Library({
             disabled={songs.length === 0}
             items={[
               { label: 'CSV', onSelect: handleExportCsv },
-              { label: 'JSON', onSelect: handleExportJson }
+              { label: 'JSON', onSelect: handleExportJson },
+              SEPARATOR,
+              {
+                label: 'Enviar a Engine DJ…',
+                onSelect: () => setEngineSyncOpen(true),
+                title:
+                  'Escribe la estructura en el título y en los hot cues de Engine — que es lo que sí se ve en la pantalla de la controladora'
+              }
             ]}
           />
         </div>
@@ -727,6 +736,13 @@ export default function Library({
           songs={songs}
           onClose={() => setEngineImportOpen(false)}
           onImport={handleEngineImport}
+        />
+      )}
+      {isEngineSyncOpen && (
+        <EngineSyncPanel
+          songs={gridRebuildTargets}
+          scopeLabel={selectedIds.size > 0 ? 'seleccionada(s)' : 'a la vista'}
+          onClose={() => setEngineSyncOpen(false)}
         />
       )}
     </div>

@@ -23,6 +23,7 @@ import {
   type NewSongRecord
 } from './database'
 import { DEFAULT_ENGINE_LIBRARY_DIR, readEngineLibrary } from './engineLibrary'
+import { isEngineRunning, revertEngineSync, syncToEngine, type EngineSyncOptions } from './engineSync'
 import type { EngineLibrary } from '../shared/engine'
 import type { SongAnalysisUpdate, SongMetadata, SongTagsUpdate } from '../shared/song'
 
@@ -148,6 +149,32 @@ ipcMain.handle('db:remove-songs-from-collection', (_event, collectionId: number,
 
 ipcMain.handle('engine:read-library', (_event, libraryDir?: string): Promise<EngineLibrary> =>
   readEngineLibrary(libraryDir ?? DEFAULT_ENGINE_LIBRARY_DIR)
+)
+
+ipcMain.handle('engine:is-running', (): Promise<boolean> => isEngineRunning())
+
+/** Takes song ids rather than whole records so the renderer doesn't ship its library over IPC —
+ *  the main process already holds the same rows. */
+function songsForIds(songIds: number[]): ReturnType<typeof listSongs> {
+  const wanted = new Set(songIds)
+  return listSongs().filter((song) => wanted.has(song.id))
+}
+
+ipcMain.handle(
+  'engine:sync',
+  (
+    _event,
+    songIds: number[],
+    options: Omit<EngineSyncOptions, 'libraryDir'> & { libraryDir?: string }
+  ) =>
+    syncToEngine(songsForIds(songIds), {
+      ...options,
+      libraryDir: options.libraryDir ?? DEFAULT_ENGINE_LIBRARY_DIR
+    })
+)
+
+ipcMain.handle('engine:revert-sync', (_event, songIds: number[], libraryDir?: string) =>
+  revertEngineSync(songsForIds(songIds), libraryDir ?? DEFAULT_ENGINE_LIBRARY_DIR)
 )
 
 ipcMain.handle('dialog:pick-engine-library', async (): Promise<string | null> => {

@@ -15,3 +15,36 @@ export interface EngineLibrary {
   /** Absolute path per track id, deduplicated — playlists reference the same track many times over. */
   trackPaths: Record<number, string>
 }
+
+/** What the renderer asks for when pushing our analysis into Engine's library. */
+export interface EngineSyncRequest {
+  /** Defaults to ~/Music/Engine Library when left out. */
+  libraryDir?: string
+  writeComment: boolean
+  writeTitle: boolean
+  writeCues: boolean
+  /** Count what would change without writing anything. */
+  dryRun: boolean
+}
+
+export interface EngineSyncResult {
+  /** Songs of ours that exist in Engine's library at all. */
+  matched: number
+  /** Songs of ours with no track in Engine — nothing to write for these. */
+  unmatched: number
+  commentsWritten: number
+  titlesWritten: number
+  cuesWritten: number
+  /** Tracks with more than eight blocks, where cues cover only part of the structure. */
+  cuesTruncated: number
+  /** Tracks Engine hasn't analysed yet, so there's no sample rate to place cues against. */
+  cuesSkippedNoSampleRate: number
+  backupPath: string | null
+  dryRun: boolean
+}
+
+export interface EngineRevertResult {
+  titlesReverted: number
+  cuesCleared: number
+  backupPath: string
+}
