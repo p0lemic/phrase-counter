@@ -57,6 +57,7 @@ Grab a build from the [**latest release**](https://github.com/p0lemic/phrase-cou
 | macOS (Apple Silicon) | `Phrase Counter-*-arm64.dmg` |
 | macOS (Intel) | `Phrase Counter-*.dmg` |
 | Windows | `Phrase Counter Setup *.exe` |
+| Linux (x64) | `Phrase Counter-*.AppImage` |
 
 ### macOS: the app is unsigned
 
@@ -73,6 +74,15 @@ Then open it normally. (Or right-click the app → **Open** → **Open**.)
 ### Windows: SmartScreen
 
 Same story — unsigned installer. Click **More info** → **Run anyway**.
+
+### Linux
+
+Make it executable and run it:
+
+```bash
+chmod +x "Phrase Counter-0.1.0.AppImage"
+./"Phrase Counter-0.1.0.AppImage"
+```
 
 ## Supported audio
 
