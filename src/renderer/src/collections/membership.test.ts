@@ -10,6 +10,7 @@ function song(id: number, title: string): SongRecord {
     title,
     artist: 'Un artista',
     tagsRead: true,
+    gridSource: 'detected',
     bpm: 170,
     durationMs: 300_000,
     phraseTimesSec: [],

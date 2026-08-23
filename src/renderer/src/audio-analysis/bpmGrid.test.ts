@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { buildBeatGridFromBpm, buildCorrectedBeatGrid, phraseBoundariesSec } from './bpmGrid'
+import { phraseTimesFromEngineGrid } from '../../../shared/phraseGrid'
 
 describe('buildBeatGridFromBpm', () => {
   test('builds an evenly-spaced grid from a manual BPM and first-kick offset', () => {
@@ -105,5 +106,45 @@ describe('phraseBoundariesSec', () => {
     const boundaries = phraseBoundariesSec(kickTimesSec)
 
     expect(boundaries).toEqual([kickTimesSec[0]])
+  })
+})
+
+describe('phraseTimesFromEngineGrid', () => {
+  /** 180 BPM: a third of a second per beat, so a 32-beat phrase is a round 10.666… s. */
+  const grid = { bpm: 180, beatIntervalSec: 1 / 3, beat0Sec: 0.2, phraseAnchorBeat: 0 }
+
+  test('puts a phrase line every 32 beats from Engine beat 0', () => {
+    const times = phraseTimesFromEngineGrid(grid, 40)
+
+    expect(times[0]).toBeCloseTo(0.2, 6)
+    expect(times[1]).toBeCloseTo(0.2 + 32 / 3, 6)
+    expect(times[2]).toBeCloseTo(0.2 + 64 / 3, 6)
+  })
+
+  test('anchors the phrases on the beat the main cue marks', () => {
+    const times = phraseTimesFromEngineGrid({ ...grid, phraseAnchorBeat: 4 }, 40)
+
+    expect(times[0]).toBeCloseTo(0.2 + 4 / 3, 6)
+    expect(times[1]).toBeCloseTo(0.2 + 36 / 3, 6)
+  })
+
+  test('drops a trailing stretch too short to hold a full phrase', () => {
+    // Three phrases fit in 32.2 s; the fourth would run past the end of the track.
+    const times = phraseTimesFromEngineGrid(grid, 32.2)
+
+    expect(times).toHaveLength(3)
+  })
+
+  test('starts at the first phrase that falls inside the track', () => {
+    // An anchor 32 beats before the start of the audio: its first phrase line is unplayable.
+    const times = phraseTimesFromEngineGrid({ ...grid, phraseAnchorBeat: -32 }, 40)
+
+    expect(times[0]).toBeCloseTo(0.2, 6)
+  })
+
+  test('still marks a single phrase on a clip shorter than 32 beats', () => {
+    const times = phraseTimesFromEngineGrid(grid, 5)
+
+    expect(times).toEqual([0.2])
   })
 })

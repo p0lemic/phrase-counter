@@ -9,6 +9,7 @@ function song(id: number, artist: string, title: string, bpm = 170, durationMs =
     title,
     artist,
     tagsRead: true,
+    gridSource: 'detected',
     bpm,
     durationMs,
     phraseTimesSec: [],

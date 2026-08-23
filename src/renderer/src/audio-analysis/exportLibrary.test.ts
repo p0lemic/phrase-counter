@@ -8,6 +8,7 @@ const song: SongRecord = {
   title: 'Makina Feria',
   artist: 'DJ Skudero',
   tagsRead: true,
+  gridSource: 'detected',
   bpm: 170.4,
   durationMs: 37433,
   phraseTimesSec: [0, 9.3, 18.6, 27.9],

@@ -1,3 +1,19 @@
+/**
+ * The beat grid Engine DJ analysed for a track, reduced to the straight line it always is.
+ *
+ * Every one of the 24,317 analysed tracks in a real library stores exactly two markers, so the
+ * grid is a constant tempo through and through: `beat0Sec + n * beatIntervalSec` reproduces it
+ * everywhere, with none of the drift our own tempo estimate accumulates over a long track.
+ */
+export interface EngineGrid {
+  bpm: number
+  beatIntervalSec: number
+  /** Time of Engine's beat 0 — the beat its bar and phrase numbering counts from. */
+  beat0Sec: number
+  /** Beat the 32-beat phrase grid should start on: the main cue's beat, or 0 when there is none. */
+  phraseAnchorBeat: number
+}
+
 /** One Engine DJ playlist, with its parent chain already folded into the name. */
 export interface EnginePlaylist {
   id: number
@@ -14,6 +30,8 @@ export interface EngineLibrary {
   playlists: EnginePlaylist[]
   /** Absolute path per track id, deduplicated — playlists reference the same track many times over. */
   trackPaths: Record<number, string>
+  /** Engine's beat grid per absolute path, for every track in the library it has analysed. */
+  grids: Record<string, EngineGrid>
 }
 
 /** What the renderer asks for when pushing our analysis into Engine's library. */

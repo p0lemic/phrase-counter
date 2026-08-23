@@ -2,14 +2,36 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import initSqlJs from 'sql.js'
+import { decodeBeatGrid } from './engineBeatGrid'
 import { flattenPlaylistNames, resolveTrackPath, type EnginePlaylistRow } from './engineImport'
-import type { EngineLibrary, EnginePlaylist } from '../shared/engine'
+import type { EngineGrid, EngineLibrary, EnginePlaylist } from '../shared/engine'
 
 export const DEFAULT_ENGINE_LIBRARY_DIR = join(homedir(), 'Music', 'Engine Library')
 
 function rows(db: import('sql.js').Database, sql: string): unknown[][] {
   const result = db.exec(sql)
   return result.length === 0 ? [] : result[0].values
+}
+
+/**
+ * Every track's beat grid, keyed by the absolute path our own library indexes songs by.
+ *
+ * Keyed by path rather than by track id, and covering the whole library rather than just the
+ * tracks some playlist references, because the grid is useful for any song of ours Engine has
+ * seen — not only the ones being imported as a collection.
+ */
+function readGrids(db: import('sql.js').Database, pathByTrackId: Map<number, string>): Record<string, EngineGrid> {
+  const grids: Record<string, EngineGrid> = {}
+
+  for (const row of rows(db, 'SELECT trackId, beatData, quickCues FROM PerformanceData WHERE beatData IS NOT NULL')) {
+    const path = pathByTrackId.get(row[0] as number)
+    if (!path) continue
+    const quickCues = row[2] as Uint8Array | null
+    const grid = decodeBeatGrid(Buffer.from(row[1] as Uint8Array), quickCues ? Buffer.from(quickCues) : null)
+    if (grid) grids[path] = grid
+  }
+
+  return grids
 }
 
 /** Reads Engine DJ's own SQLite library. Strictly read-only: the file is loaded into memory and
@@ -65,7 +87,7 @@ export async function readEngineLibrary(libraryDir: string): Promise<EngineLibra
     const trackPaths: Record<number, string> = {}
     for (const trackId of referenced) trackPaths[trackId] = pathByTrackId.get(trackId) as string
 
-    return { libraryDir, playlists, trackPaths }
+    return { libraryDir, playlists, trackPaths, grids: readGrids(db, pathByTrackId) }
   } finally {
     db.close()
   }

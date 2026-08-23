@@ -4,6 +4,7 @@ import {
   decodeQuickCues,
   decodeSampleRate,
   emptyQuickCues,
+  mainCueSamples,
   encodeQuickCues,
   QUICK_CUE_COUNT,
   TRAILER_LENGTH
@@ -86,6 +87,22 @@ describe('quickCues codec', () => {
 
   it('rejects a truncated blob rather than writing nonsense back', () => {
     expect(() => decodeQuickCues(Buffer.from([1, 2]))).toThrow()
+  })
+})
+
+describe('mainCueSamples', () => {
+  it('reports no main cue on a track that never had performance data', () => {
+    expect(mainCueSamples(emptyQuickCues())).toBeNull()
+  })
+
+  it('reads back a main cue written into the trailer', () => {
+    const cues = emptyQuickCues()
+    cues.trailer.writeDoubleBE(529200, 0)
+    expect(mainCueSamples(cues)).toBe(529200)
+  })
+
+  it('survives a trailer shorter than a double', () => {
+    expect(mainCueSamples({ cues: [], trailer: Buffer.alloc(3) })).toBeNull()
   })
 })
 

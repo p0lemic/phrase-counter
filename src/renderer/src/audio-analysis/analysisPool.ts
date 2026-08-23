@@ -1,11 +1,15 @@
 import { dequeue, enqueue, type QueuedJob } from './analysisQueue'
 import type { AnalysisRequest, AnalysisResponse } from './analysisWorker'
 import type { Block } from './formatBlocks'
+import type { EngineGrid } from '../../../shared/engine'
+import type { GridSource } from '../../../shared/song'
 
 export interface AnalysisInput {
   monoSamples: Float32Array
   sampleRate: number
   durationSec: number
+  /** Engine DJ's own grid for this track. With one, the tempo half of the analysis is skipped. */
+  engineGrid?: EngineGrid
 }
 
 export interface AnalysisOutput {
@@ -14,6 +18,7 @@ export interface AnalysisOutput {
   phraseTimesSec: number[]
   phraseEnergies: number[]
   blocks: Block[]
+  gridSource: GridSource
 }
 
 export class AnalysisCancelledError extends Error {
@@ -141,7 +146,8 @@ class AnalysisPool {
               durationSec: response.durationSec,
               phraseTimesSec: response.phraseTimesSec,
               phraseEnergies: response.phraseEnergies,
-              blocks: response.blocks
+              blocks: response.blocks,
+              gridSource: response.gridSource
             })
           : pending.reject(new Error(response.error))
       )
@@ -171,7 +177,8 @@ class AnalysisPool {
       jobId: job.id,
       monoSamples: job.payload.monoSamples,
       sampleRate: job.payload.sampleRate,
-      durationSec: job.payload.durationSec
+      durationSec: job.payload.durationSec,
+      engineGrid: job.payload.engineGrid
     }
     // Transferred rather than copied where we can: these buffers are tens of MB each.
     slot.worker.postMessage(request, job.payload.keepSamples ? [] : [job.payload.monoSamples.buffer])

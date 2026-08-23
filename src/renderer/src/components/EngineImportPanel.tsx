@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { matchTrackPaths } from '../collections/engineImport'
+import { engineGrids } from '../audio-analysis/engineGrids'
 import { SearchIcon } from './icons'
 import type { EngineLibrary } from '../../../shared/engine'
 import type { SongRecord } from '../../../shared/song'
@@ -40,7 +41,11 @@ export default function EngineImportPanel({ songs, onClose, onImport }: Props): 
     setError(null)
     setLibrary(null)
     try {
-      setLibrary(await window.api.engine.readLibrary(libraryDir))
+      const loaded = await window.api.engine.readLibrary(libraryDir)
+      // The analysis pipeline asks for these per song; handing them over now saves it re-reading a
+      // several-hundred-megabyte database, and picks up a folder the user chose by hand.
+      engineGrids.prime(loaded.grids)
+      setLibrary(loaded)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError))
     }
