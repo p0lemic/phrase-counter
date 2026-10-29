@@ -47,3 +47,27 @@ describe('analyzeDecodedAudio with an Engine grid', () => {
     expect(analysis.blocks.length).toBeGreaterThan(0)
   })
 })
+
+describe('analyzeDecodedAudio without an Engine grid', () => {
+  let analysis: SongAnalysis
+
+  beforeAll(async () => {
+    analysis = await analyzeDecodedAudio(clickTrack(174, 0.5), SAMPLE_RATE, DURATION_SEC)
+  })
+
+  it('detects the tempo the way Engine would, down to the whole number', () => {
+    expect(analysis.bpm).toBe(174)
+  })
+
+  it('lays the phrase lines on the kicks', () => {
+    const beatSec = 60 / 174
+    for (const time of analysis.phraseTimesSec) {
+      const beats = (time - 0.5) / beatSec
+      expect(Math.abs(beats - Math.round(beats)) * beatSec).toBeLessThan(0.01)
+    }
+  })
+
+  it('records that the grid was detected', () => {
+    expect(analysis.gridSource).toBe('detected')
+  })
+})

@@ -10,6 +10,7 @@ import {
 import { bandpassFilter } from './filters'
 import { bestPhaseOffsetSec, fitConstantTempoGrid, kickAttackEnvelope } from './gridPhase'
 import { markBreakdowns } from './breakdownDetection'
+import { detectOctaveBandGrid } from './octaveBandRhythm'
 import type { Block } from './formatBlocks'
 import type { EngineGrid } from '../../../shared/engine'
 import type { GridSource } from '../../../shared/song'
@@ -33,9 +34,13 @@ export interface SongAnalysis {
  * (OfflineAudioContext, and so decoding, exists only on the main thread).
  *
  * With an `engineGrid` the whole tempo half is skipped — Engine already knows the track's exact
- * tempo and phase, and reusing it both removes the drift our own estimate accumulates and drops
- * essentia, which is ~94% of the time this function costs. The energy half, which is what finds
- * the blocks and breakdowns, runs identically either way.
+ * tempo and phase. Without one, the grid comes from `detectOctaveBandGrid`, our rebuild of
+ * Engine's own analyser, so a track gets the grid Engine would give it. Measured against a real
+ * library (rhythmBenchmark.integration.test.ts), it matches Engine's tempo on 188 of 200 tracks
+ * and lands its phrase lines a median 3.8 ms from Engine's beats; essentia, on the first 60 of
+ * those, matched 26 and sat 59 ms off, taking three times as long. Essentia remains only as a
+ * fallback for audio the detector finds no pulse in. The energy half, which is what finds the
+ * blocks and breakdowns, runs identically either way.
  */
 export async function analyzeDecodedAudio(
   monoSamples: Float32Array,
@@ -43,21 +48,22 @@ export async function analyzeDecodedAudio(
   durationSec: number,
   engineGrid?: EngineGrid
 ): Promise<SongAnalysis> {
-  if (engineGrid) {
+  const grid = engineGrid ?? detectOctaveBandGrid(monoSamples, sampleRate)
+  if (grid) {
     const kickBand = bandpassFilter(monoSamples, sampleRate, KICK_BAND_LOW_HZ, KICK_BAND_HIGH_HZ)
-    const phraseTimesSec = phraseTimesFromEngineGrid(engineGrid, durationSec)
+    const phraseTimesSec = phraseTimesFromEngineGrid(grid, durationSec)
     const phraseEnergies = computePhraseEnergies(kickBand, sampleRate, phraseTimesSec, durationSec)
     const blocks = markBreakdowns(groupPhrasesIntoBlocks(phraseEnergies), phraseEnergies)
 
     return {
-      bpm: engineGrid.bpm,
+      bpm: grid.bpm,
       durationSec,
       monoSamples,
       sampleRate,
       phraseTimesSec,
       phraseEnergies,
       blocks,
-      gridSource: 'engine'
+      gridSource: engineGrid ? 'engine' : 'detected'
     }
   }
 
