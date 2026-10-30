@@ -81,6 +81,16 @@ describe('detectOctaveBandGrid', () => {
     expect(grid.phraseAnchorBeat).toBe(0)
   })
 
+  it('counts the bars from the first kick, not from a stray noise before it', () => {
+    const samples = kickTrack(172, 1, 100)
+    // A click off the beat grid, well before the music starts.
+    const clickStart = Math.round(0.2 * SAMPLE_RATE)
+    for (let i = 0; i < 0.01 * SAMPLE_RATE; i++) samples[clickStart + i] += 0.5 * Math.exp(-i / 50) * (i % 2 ? 1 : -1)
+
+    const grid = detectOctaveBandGrid(samples, SAMPLE_RATE)!
+    expect(circularDistanceSec(grid.beat0Sec, 1, 4 * grid.beatIntervalSec)).toBeLessThan(0.005)
+  })
+
   it('keeps a tempo between whole numbers instead of rounding it away', () => {
     const grid = detectOctaveBandGrid(kickTrack(165.063, 0.2, 120), SAMPLE_RATE)!
     expect(grid.bpm).toBeCloseTo(165.063, 2)
