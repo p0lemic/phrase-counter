@@ -1,11 +1,15 @@
 import { analyzeDecodedAudio } from './analyzeSong'
 import type { Block } from './formatBlocks'
+import type { EngineGrid } from '../../../shared/engine'
+import type { GridSource } from '../../../shared/song'
 
 export interface AnalysisRequest {
   jobId: number
   monoSamples: Float32Array
   sampleRate: number
   durationSec: number
+  /** Engine DJ's own grid for this track, when its library has one. */
+  engineGrid?: EngineGrid
 }
 
 /** What comes back. The decoded samples deliberately stay in the worker: the batch doesn't need
@@ -18,6 +22,7 @@ export interface AnalysisSuccess {
   phraseTimesSec: number[]
   phraseEnergies: number[]
   blocks: Block[]
+  gridSource: GridSource
 }
 
 export interface AnalysisFailure {
@@ -29,9 +34,9 @@ export interface AnalysisFailure {
 export type AnalysisResponse = AnalysisSuccess | AnalysisFailure
 
 self.onmessage = async (event: MessageEvent<AnalysisRequest>): Promise<void> => {
-  const { jobId, monoSamples, sampleRate, durationSec } = event.data
+  const { jobId, monoSamples, sampleRate, durationSec, engineGrid } = event.data
   try {
-    const analysis = await analyzeDecodedAudio(monoSamples, sampleRate, durationSec)
+    const analysis = await analyzeDecodedAudio(monoSamples, sampleRate, durationSec, engineGrid)
     const response: AnalysisSuccess = {
       jobId,
       ok: true,
@@ -39,7 +44,8 @@ self.onmessage = async (event: MessageEvent<AnalysisRequest>): Promise<void> => 
       durationSec: analysis.durationSec,
       phraseTimesSec: analysis.phraseTimesSec,
       phraseEnergies: analysis.phraseEnergies,
-      blocks: analysis.blocks
+      blocks: analysis.blocks,
+      gridSource: analysis.gridSource
     }
     self.postMessage(response)
   } catch (error) {

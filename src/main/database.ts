@@ -22,6 +22,7 @@ export async function openDatabase(path: string): Promise<void> {
       duration_ms INTEGER NOT NULL,
       phrase_times_sec TEXT NOT NULL DEFAULT '[]',
       blocks TEXT NOT NULL,
+      grid_source TEXT NOT NULL DEFAULT 'detected',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -101,6 +102,17 @@ function migrate(): void {
     }
   })
 
+  runOnce('add_grid_source_column', () => {
+    // Every grid built before this migration came from our own kick detection; Engine DJ's grid,
+    // where the library has one, replaces it from here on and is worth telling apart on screen.
+    const columns = requireDb()
+      .exec('PRAGMA table_info(songs)')[0]
+      .values.map((row) => row[1] as string)
+    if (!columns.includes('grid_source')) {
+      requireDb().run("ALTER TABLE songs ADD COLUMN grid_source TEXT NOT NULL DEFAULT 'detected'")
+    }
+  })
+
   runOnce('invalidate_uncorrected_phrase_grids', () => {
     // Grids cached before this migration were pure even-beat extrapolation with no re-anchoring to
     // real kicks, which can compound a slightly-off BPM estimate into real drift over a long track
@@ -137,6 +149,7 @@ function rowToSong(row: Record<string, unknown>): SongRecord {
     durationMs: row.duration_ms as number,
     phraseTimesSec: JSON.parse(row.phrase_times_sec as string),
     blocks: JSON.parse(row.blocks as string),
+    gridSource: row.grid_source === 'engine' ? 'engine' : 'detected',
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
   }
@@ -161,8 +174,8 @@ export function findSongByFilePath(filePath: string): SongRecord | undefined {
 export function insertSong(song: NewSongRecord): SongRecord {
   const now = new Date().toISOString()
   requireDb().run(
-    `INSERT INTO songs (file_path, title, artist, tags_read, bpm, duration_ms, phrase_times_sec, blocks, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO songs (file_path, title, artist, tags_read, bpm, duration_ms, phrase_times_sec, blocks, grid_source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       song.filePath,
       song.title,
@@ -172,6 +185,7 @@ export function insertSong(song: NewSongRecord): SongRecord {
       song.durationMs,
       JSON.stringify(song.phraseTimesSec),
       JSON.stringify(song.blocks),
+      song.gridSource,
       now,
       now
     ]
@@ -183,13 +197,17 @@ export function insertSong(song: NewSongRecord): SongRecord {
 }
 
 export function updateSongAnalysis(id: number, update: SongAnalysisUpdate): void {
-  requireDb().run('UPDATE songs SET bpm = ?, phrase_times_sec = ?, blocks = ?, updated_at = ? WHERE id = ?', [
-    update.bpm,
-    JSON.stringify(update.phraseTimesSec),
-    JSON.stringify(update.blocks),
-    new Date().toISOString(),
-    id
-  ])
+  requireDb().run(
+    'UPDATE songs SET bpm = ?, phrase_times_sec = ?, blocks = ?, grid_source = ?, updated_at = ? WHERE id = ?',
+    [
+      update.bpm,
+      JSON.stringify(update.phraseTimesSec),
+      JSON.stringify(update.blocks),
+      update.gridSource,
+      new Date().toISOString(),
+      id
+    ]
+  )
   persist()
 }
 

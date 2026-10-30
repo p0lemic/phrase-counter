@@ -1,4 +1,4 @@
-import { deflateSync, inflateSync } from 'node:zlib'
+import { unwrap, wrap } from './engineBlob'
 
 /** Engine stores exactly this many quick cues per track — always all eight, unused ones blanked. */
 export const QUICK_CUE_COUNT = 8
@@ -35,25 +35,6 @@ function doubleToBuffer(value: number): Buffer {
   const buffer = Buffer.alloc(8)
   buffer.writeDoubleBE(value)
   return buffer
-}
-
-/** Engine wraps its performance blobs as a big-endian uncompressed length followed by a zlib
- *  stream. The length prefix is redundant with what inflate produces, but Engine writes it and
- *  presumably reads it, so we reproduce it exactly. */
-function unwrap(blob: Buffer): Buffer {
-  if (blob.length < 4) throw new Error('blob de Engine demasiado corto')
-  const declaredLength = blob.readUInt32BE(0)
-  const body = inflateSync(blob.subarray(4))
-  if (body.length !== declaredLength) {
-    throw new Error(`longitud declarada ${declaredLength} != real ${body.length}`)
-  }
-  return body
-}
-
-function wrap(body: Buffer): Buffer {
-  const prefix = Buffer.alloc(4)
-  prefix.writeUInt32BE(body.length)
-  return Buffer.concat([prefix, deflateSync(body)])
 }
 
 export function decodeQuickCues(blob: Buffer): QuickCues {
@@ -104,6 +85,21 @@ export function encodeQuickCues({ cues, trailer }: QuickCues): Buffer {
 
   parts.push(trailer)
   return wrap(Buffer.concat(parts))
+}
+
+/**
+ * The track's main cue — the point Engine drops the playhead on when you load the track — in
+ * samples, or null when the track has none.
+ *
+ * It is the first double of the trailer we otherwise carry across untouched. Measured over a
+ * 24,317-track library: 219 tracks have one, and 215 of those sit within a millisecond of a beat
+ * of the track's own grid, so this is a position a DJ (or Engine) placed deliberately rather than
+ * a byte that happens to look like a number.
+ */
+export function mainCueSamples({ trailer }: QuickCues): number | null {
+  if (trailer.length < 8) return null
+  const position = trailer.readDoubleBE(0)
+  return Number.isFinite(position) && position >= 0 ? position : null
 }
 
 /** The blob to start from when a track has no performance data of its own yet. */

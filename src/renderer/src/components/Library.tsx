@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { decodeAudioBuffer } from '../audio-analysis/decode'
 import { analysisConcurrency, getAnalysisPool } from '../audio-analysis/analysisPool'
+import { engineGrids } from '../audio-analysis/engineGrids'
 import { runConcurrently } from '../audio-analysis/runConcurrently'
 import { formatBlocks } from '../audio-analysis/formatBlocks'
 import { songsToCsv, songsToJson } from '../audio-analysis/exportLibrary'
+import { linkedPathsToRegrid } from '../collections/engineImport'
 import { resolveDragIds, songsInCollection } from '../collections/membership'
 import { setDraggedSongIds } from '../collections/dragData'
 import { useCollections } from '../collections/useCollections'
@@ -24,6 +26,12 @@ interface OpenSongRequest {
   filePath: string
   fileName: string
 }
+
+/** What analyzing a file the library already holds does to what is stored for it:
+ *  - `skip-analyzed`: leave an already-analyzed song exactly as it is (adding files, importing).
+ *  - `regrid`: recompute grid and BPM, keeping blocks the user has edited by hand.
+ *  - `replace`: recompute everything, manual block edits included (rescanning a folder). */
+type ExistingSongPolicy = 'skip-analyzed' | 'regrid' | 'replace'
 
 function basename(filePath: string): string {
   return filePath.split(/[/\\]/).pop() ?? filePath
@@ -136,25 +144,29 @@ export default function Library({
     await refresh()
   }
 
-  /** Analyzes one file and stores it, returning the stored song. An already-analyzed file comes
-   *  back untouched unless `overwriteExisting` — but "already in the library" isn't the same as
+  /** Analyzes one file and stores it, returning the stored song. What happens to a file the library
+   *  already knows is up to `policy` — note that "already in the library" isn't the same as
    *  "analyzed": a song whose grid was invalidated by a migration is still missing its analysis,
    *  and skipping it there is what left imported collections full of gridless songs.
    *  Returns undefined for files that fail to decode (unsupported codec, corrupt file, ...). */
-  async function analyzeAndStore(filePath: string, overwriteExisting: boolean): Promise<SongRecord | undefined> {
+  async function analyzeAndStore(filePath: string, policy: ExistingSongPolicy): Promise<SongRecord | undefined> {
     try {
       const existing = await window.api.db.findSongByPath(filePath)
-      if (existing && !overwriteExisting && existing.phraseTimesSec.length > 0) return existing
+      if (existing && policy === 'skip-analyzed' && existing.phraseTimesSec.length > 0) return existing
 
       const arrayBuffer = await window.api.readAudioFile(filePath)
       // Decoding stays here (OfflineAudioContext is main-thread only) but Chromium runs it off
       // the UI thread; the expensive half goes to a worker, several songs at a time.
       const decoded = await decodeAudioBuffer(arrayBuffer)
-      const analysis = await getAnalysisPool().submit(decoded)
+      const engineGrid = await engineGrids.gridFor(filePath)
+      const analysis = await getAnalysisPool().submit({ ...decoded, engineGrid })
       const update = {
         bpm: analysis.bpm,
         phraseTimesSec: analysis.phraseTimesSec,
-        blocks: analysis.blocks
+        // A regrid is about the timing, not the structure: whatever blocks the user has edited by
+        // hand survive it, exactly as they do in "Recalcular rejillas".
+        blocks: policy === 'regrid' && existing && existing.blocks.length > 0 ? existing.blocks : analysis.blocks,
+        gridSource: analysis.gridSource
       }
 
       if (existing) {
@@ -181,10 +193,23 @@ export default function Library({
     const targets = gridRebuildTargets
     if (targets.length === 0) return
 
+    // Reading Engine's library takes a moment and the rebuild needs it anyway; doing it here means
+    // the confirmation can say how many of these songs will get an exact grid instead of a guess.
+    setProgress({
+      label: 'Leyendo la biblioteca de Engine DJ',
+      current: 0,
+      total: targets.length,
+      fileName: '',
+      startedAt: Date.now()
+    })
+    const withEngineGrid = await engineGrids.countKnown(targets.map((song) => song.filePath))
+    setProgress(null)
+
     const confirmed = window.confirm(
       `Se van a recalcular las rejillas de ${targets.length} canción(es) ${gridRebuildScope}. ` +
-        `Puede tardar un rato — podrás cancelar a mitad y lo hecho se conserva. ` +
-        `Los bloques que hayas editado a mano no se tocan.`
+        `${withEngineGrid} de ellas están analizadas en Engine DJ y usarán su rejilla y su BPM, que ` +
+        `son exactos; el resto se detectan como siempre. Puede tardar un rato — podrás cancelar a ` +
+        `mitad y lo hecho se conserva. Los bloques que hayas editado a mano no se tocan.`
     )
     if (!confirmed) return
 
@@ -198,11 +223,13 @@ export default function Library({
         try {
           const arrayBuffer = await window.api.readAudioFile(song.filePath)
           const decoded = await decodeAudioBuffer(arrayBuffer)
-          const analysis = await getAnalysisPool().submit(decoded)
+          const engineGrid = await engineGrids.gridFor(song.filePath)
+          const analysis = await getAnalysisPool().submit({ ...decoded, engineGrid })
           await window.api.db.updateSongAnalysis(song.id, {
             bpm: analysis.bpm,
             phraseTimesSec: analysis.phraseTimesSec,
-            blocks: song.blocks.length > 0 ? song.blocks : analysis.blocks
+            blocks: song.blocks.length > 0 ? song.blocks : analysis.blocks,
+            gridSource: analysis.gridSource
           })
         } finally {
           completed++
@@ -236,7 +263,7 @@ export default function Library({
       targetPaths,
       analysisConcurrency(),
       async (filePath) => {
-        await analyzeAndStore(filePath, overwriteExisting)
+        await analyzeAndStore(filePath, overwriteExisting ? 'replace' : 'skip-analyzed')
         completed++
         setProgress({
           label: 'Analizando canciones',
@@ -258,44 +285,50 @@ export default function Library({
    *  lands so a long run keeps making visible progress. */
   async function handleEngineImport(selections: EngineSelection[]): Promise<void> {
     setEngineImportOpen(false)
-    const gridlessIds = new Set(songs.filter((song) => song.phraseTimesSec.length === 0).map((s) => s.id))
-    const total = selections.reduce(
-      (sum, selection) =>
-        sum + selection.missingPaths.length + selection.songIds.filter((id) => gridlessIds.has(id)).length,
-      0
-    )
 
-    // Songs already in the library get linked straight away, but one whose grid a migration
-    // invalidated still needs analyzing — otherwise the collection lands full of gridless songs.
-    const gridlessPaths = new Map(
-      songs.filter((song) => song.phraseTimesSec.length === 0).map((song) => [song.id, song.filePath])
-    )
+    // Linking a song we had already analyzed isn't the end of it: Engine's grid is exact where it
+    // exists, and a song analyzed before we ever read Engine's library keeps a tempo and a phase
+    // that are close but not the ones the controller plays to. The import goes back over those.
+    // The panel primed these grids on the way in, so asking costs nothing here.
+    const linkedIds = new Set(selections.flatMap((selection) => selection.songIds))
+    const linkedSongs = songs.filter((song) => linkedIds.has(song.id))
+    const withEngineGrid = await engineGrids.pathsWithGrid(linkedSongs.map((song) => song.filePath))
 
     const created: { collectionId: number; pendingPaths: string[] }[] = []
     for (const selection of selections) {
       const collection = await window.api.db.createCollection(selection.name)
       await window.api.db.addSongsToCollection(collection.id, selection.songIds)
-      const linkedWithoutGrid = selection.songIds
-        .map((id) => gridlessPaths.get(id))
-        .filter((path): path is string => path !== undefined)
       created.push({
         collectionId: collection.id,
-        pendingPaths: [...selection.missingPaths, ...linkedWithoutGrid]
+        pendingPaths: [
+          ...selection.missingPaths,
+          ...linkedPathsToRegrid(selection.songIds, songs, withEngineGrid)
+        ]
       })
     }
     await refresh()
 
+    const pendingPaths = created.flatMap((collection) => collection.pendingPaths)
+    const total = pendingPaths.length
     if (total === 0) return
+    const regridding = total - selections.reduce((sum, selection) => sum + selection.missingPaths.length, 0)
+    const exact = (await engineGrids.pathsWithGrid(pendingPaths)).size
     const analyze = window.confirm(
-      `Colecciones creadas con las canciones que ya tenías.\n\nQuedan ${total} archivo(s) por analizar. ` +
-        `Aceptar los analiza ahora (puede tardar mucho; podrás cancelar a mitad). ` +
-        `Cancelar deja las colecciones solo con lo que ya estaba analizado.`
+      `Colecciones creadas con las canciones que ya tenías.\n\nQuedan ${total} canción(es) por analizar` +
+        `${regridding > 0 ? `, ${regridding} de ellas ya en tu librería pero con una rejilla que no es la de Engine` : ''}. ` +
+        `${exact} usarán la rejilla y el BPM exactos de Engine DJ; el resto se detectan como siempre. ` +
+        `Aceptar las analiza ahora (puede tardar mucho; podrás cancelar a mitad y lo hecho se conserva). ` +
+        `Los bloques que hayas editado a mano no se tocan, pero sí se pierde cualquier ajuste manual de la ` +
+        `rejilla. Cancelar deja las colecciones tal cual.`
     )
     if (!analyze) return
 
     cancelRef.current = false
     const startedAt = Date.now()
     let done = 0
+    // A song can sit in two of the chosen playlists; the second time round it is already on
+    // Engine's grid, so it only needs linking, not analyzing again.
+    const analyzed = new Set<string>()
     for (const { collectionId, pendingPaths } of created) {
       // Added in batches so a long run doesn't rewrite the database file once per song.
       let pending: number[] = []
@@ -303,7 +336,8 @@ export default function Library({
         pendingPaths,
         analysisConcurrency(),
         async (filePath) => {
-          const song = await analyzeAndStore(filePath, false)
+          const song = await analyzeAndStore(filePath, analyzed.has(filePath) ? 'skip-analyzed' : 'regrid')
+          analyzed.add(filePath)
           done++
           setProgress({
             label: 'Analizando canciones',

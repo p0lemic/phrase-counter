@@ -1,6 +1,9 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
   "include": ["src/renderer/src/**/*", "src/preload/*.d.ts", "src/shared/**/*"],
+  // Integration benchmarks run in Node against main-process code (the Engine library reader);
+  // they belong to neither project, and vitest type-strips them on its own.
+  "exclude": ["src/renderer/src/**/*.integration.test.ts"],
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",

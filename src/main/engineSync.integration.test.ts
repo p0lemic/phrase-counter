@@ -66,6 +66,7 @@ async function loadOurSongs(limit: number): Promise<SongRecord[]> {
       durationMs: row[4] as number,
       blocks: JSON.parse(row[5] as string),
       phraseTimesSec: JSON.parse(row[6] as string),
+      gridSource: 'detected' as const,
       createdAt: '',
       updatedAt: ''
     }))

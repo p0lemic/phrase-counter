@@ -4,6 +4,11 @@ export interface Block {
   isBreakdown: boolean
 }
 
+/** Where a song's beat grid came from. Engine DJ's own grid is exact — its tempo and phase are
+ *  what the controller plays to — while `detected` is our own kick analysis, which is close but
+ *  carries both a small tempo error and a phase error of its own. */
+export type GridSource = 'engine' | 'detected'
+
 export interface SongRecord {
   id: number
   filePath: string
@@ -18,6 +23,7 @@ export interface SongRecord {
   /** Phrase-grid line timestamps, cached so reopening a song never re-runs BPM/kick detection. */
   phraseTimesSec: number[]
   blocks: Block[]
+  gridSource: GridSource
   createdAt: string
   updatedAt: string
 }
@@ -25,7 +31,7 @@ export interface SongRecord {
 export type NewSongRecord = Omit<SongRecord, 'id' | 'createdAt' | 'updatedAt'>
 
 /** The subset of analysis that can change after the initial insert (BPM/grid edits, block edits). */
-export type SongAnalysisUpdate = Pick<SongRecord, 'bpm' | 'phraseTimesSec' | 'blocks'>
+export type SongAnalysisUpdate = Pick<SongRecord, 'bpm' | 'phraseTimesSec' | 'blocks' | 'gridSource'>
 
 /** What an in-place edit (or the tag backfill) writes back. */
 export type SongTagsUpdate = Pick<SongRecord, 'title' | 'artist'>

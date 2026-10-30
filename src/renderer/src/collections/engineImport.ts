@@ -25,3 +25,30 @@ export function matchTrackPaths(trackPaths: string[], songs: SongRecord[]): Trac
 
   return { songIds, missingPaths }
 }
+
+/**
+ * Of the songs a playlist links to that we already have, the ones worth analyzing again — by path,
+ * ready to join the missing files in the import's analysis queue.
+ *
+ * Linking alone used to leave these exactly as they were, which is how a collection imported from
+ * Engine ended up on our own detected grid: a song analyzed before Engine's library was ever read
+ * keeps a tempo and a phase that are close but not Engine's, and nothing later goes back for it.
+ * Two cases need the pass: a song with no grid at all (a migration invalidated it), and a song on
+ * our detected grid that Engine has an exact one for. A song already on Engine's grid is done, and
+ * so is one Engine has never analyzed — there is nothing better to give it.
+ */
+export function linkedPathsToRegrid(
+  songIds: number[],
+  songs: SongRecord[],
+  pathsWithEngineGrid: ReadonlySet<string>
+): string[] {
+  const songsById = new Map(songs.map((song) => [song.id, song]))
+
+  return songIds.flatMap((id) => {
+    const song = songsById.get(id)
+    if (!song) return []
+    if (song.phraseTimesSec.length === 0) return [song.filePath]
+    if (song.gridSource === 'engine') return []
+    return pathsWithEngineGrid.has(song.filePath) ? [song.filePath] : []
+  })
+}
